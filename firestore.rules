@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // サンクスパートナーズ スカウト実績管理・分析ツール
+    // 注意: 本アプリは Firebase Authentication を使用せず、社内約10名の信頼ベースで運用されます。
+    
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

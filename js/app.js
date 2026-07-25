@@ -1,0 +1,3972 @@
+/**
+ * サンクスパートナーズ スカウト実績・求人管理一元化ツール - メインコントローラー
+ * Version: 3.4.0 (Company Master, Priority Rank, Japanese Locale Sorting, Search & Filter Release)
+ */
+
+import {
+  DEFAULT_MEDIA_LIST,
+  JOB_STATUSES,
+  INDUSTRIES,
+  POSITIONS,
+  TARGET_AGES,
+  EXECUTIVE_ROLES,
+  SALARY_RANGES,
+  KNOWLEDGE_TYPES,
+  ADMIN_PASSWORD,
+  RESET_CONFIRM_TEXT,
+  RESTORE_CONFIRM_TEXT,
+  APP_VERSION,
+  DATA_FORMAT_VERSION,
+  PRIORITY_RANKS,
+  PRIORITY_RANK_LIST
+} from './constants.js';
+
+import { StorageService } from './storage.js';
+import { AnalyticsService } from './analytics.js';
+
+class AppController {
+  constructor() {
+    this.currentView = 'daily-entry';
+    this.currentStaff = null;
+    this.isAdminMode = false;
+    this.autoSaveTimer = null;
+    this.pendingSaveResults = new Map();
+    this.activeDashboardTab = 'overview';
+    this.activeAnalysisTab = 'attribute';
+
+    // 求人マスタ検索・絞り込み・ソート状態
+    this.jobsMasterSearchKeyword = '';
+    this.jobsMasterSortBy = 'company_asc';
+    this.jobsMasterFilters = {
+      industries: [],
+      positions: [],
+      statuses: [],
+      targetAges: [],
+      roles: [],
+      salaryRanges: [],
+      priorityRanks: []
+    };
+    this.jobsMasterFilterOpen = false;
+
+    // 個人の実績入力画面 検索・簡易絞り込み・ソート状態
+    this.dailyEntrySearchKeyword = '';
+    this.dailyEntryFilterType = 'all';
+    this.dailyEntrySortBy = 'standard';
+
+    // 自動スカウト週次実績入力画面 状態
+    this.autoScoutWeekDateStr = StorageService.getWeekRange(new Date()).weekStartDate;
+    this.autoScoutSearchKeyword = '';
+    this.autoScoutMediaFilter = '';
+    this.autoScoutStatusFilter = '';
+    this.autoScoutRankFilter = '';
+    this.autoScoutScopeFilter = 'target_only'; // 'target_only' | 'all' | 'entered' | 'unentered'
+    this.autoScoutGroupMode = 'company'; // 'company' | 'rank' | 'flat'
+    this.autoScoutCollapsedGroups = new Set();
+
+    // 直接エントリー（インバウンド）実績入力画面 状態
+    this.inboundDateStr = new Date().toISOString().slice(0, 10);
+    this.inboundSearchKeyword = '';
+    this.inboundRankFilter = '';
+    this.inboundStatusFilter = '';
+    this.inboundGroupMode = 'company'; // 'company' | 'rank' | 'flat'
+    this.inboundCollapsedGroups = new Set();
+
+    // 実績入力日付 (デフォルト: 日本時間当日 YYYY-MM-DD)
+    const jstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+    this.entryDateStr = this.formatDate(jstNow);
+
+    this.init();
+  }
+
+  formatDate(d) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  init() {
+    StorageService.initStorage();
+    this.bindEvents();
+
+    const staffId = StorageService.getCurrentStaffId();
+    const user = StorageService.getUserById(staffId);
+
+    if (!user || user.status === 'inactive') {
+      this.openStaffSelectionModal(true);
+    } else {
+      this.currentStaff = user;
+      this.updateHeaderStaffDisplay();
+      this.renderCurrentView();
+    }
+  }
+
+  bindEvents() {
+    document.querySelectorAll('.nav-item').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        const view = el.getAttribute('data-view');
+        this.switchView(view);
+      });
+    });
+
+    document.getElementById('current-staff-display')?.addEventListener('click', () => {
+      this.confirmAndSwitchStaff();
+    });
+
+    document.getElementById('btn-admin-toggle')?.addEventListener('click', () => {
+      if (this.isAdminMode) {
+        this.exitAdminMode();
+      } else {
+        this.openAdminPasswordModal();
+      }
+    });
+
+    document.getElementById('btn-guide')?.addEventListener('click', () => {
+      this.openUsageGuideModal();
+    });
+
+    document.getElementById('btn-app-info')?.addEventListener('click', () => {
+      this.openAppInfoModal();
+    });
+
+    document.getElementById('btn-notifications')?.addEventListener('click', () => {
+      this.openNotificationsModal();
+    });
+  }
+
+  switchView(viewName) {
+    this.currentView = viewName;
+    document.querySelectorAll('.nav-item').forEach(el => {
+      if (el.getAttribute('data-view') === viewName) {
+        el.classList.add('active');
+      } else {
+        el.classList.remove('active');
+      }
+    });
+
+    const titleMap = {
+      'daily-entry': '本日の実績入力',
+      'dashboard': 'ダッシュボード',
+      'jobs': '求人マスタ',
+      'analysis': '分析',
+      'knowledge': '求人振り返り・ナレッジ',
+      'scout-messages': 'スカウト文面',
+      'auto-scout': '自動スカウト実績',
+      'inbound-entry': '直接エントリー実績 (インバウンド)',
+      'data-management': 'データ管理 (管理者)'
+    };
+    const titleEl = document.getElementById('page-title');
+    if (titleEl) titleEl.textContent = titleMap[viewName] || '実績入力';
+
+    this.renderCurrentView();
+  }
+
+  renderCurrentView() {
+    const container = document.getElementById('main-view-container');
+    if (!container) return;
+
+    if (this.currentView === 'daily-entry') {
+      this.renderDailyEntryView(container);
+    } else if (this.currentView === 'dashboard') {
+      this.renderDashboardView(container);
+    } else if (this.currentView === 'jobs') {
+      this.renderJobsView(container);
+    } else if (this.currentView === 'analysis') {
+      this.renderAnalysisView(container);
+    } else if (this.currentView === 'knowledge') {
+      this.renderKnowledgeView(container);
+    } else if (this.currentView === 'scout-messages') {
+      this.renderScoutMessagesView(container);
+    } else if (this.currentView === 'auto-scout') {
+      this.renderAutoScoutView(container);
+    } else if (this.currentView === 'inbound-entry') {
+      this.renderInboundView(container);
+    } else if (this.currentView === 'data-management') {
+      this.renderDataManagementView(container);
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  updateHeaderStaffDisplay() {
+    const el = document.getElementById('current-staff-name');
+    if (el) el.textContent = this.currentStaff ? this.currentStaff.name : '未選択';
+  }
+
+  confirmAndSwitchStaff() {
+    if (this.pendingSaveResults.size > 0) {
+      const saved = this.flushPendingSaves();
+      if (!saved) {
+        alert('保存に失敗している入力項目があります。確認してから担当者を切り替えてください。');
+        return;
+      }
+    }
+
+    if (confirm('担当者を切り替えますか？')) {
+      this.openStaffSelectionModal(false);
+    }
+  }
+
+  showSaveStatus(type, msg = '') {
+    const el = document.getElementById('save-status-container');
+    if (!el) return;
+    el.style.display = 'inline-flex';
+
+    if (type === 'saving') {
+      el.className = 'save-status-indicator save-status-saving';
+      el.innerHTML = '<i data-lucide="loader" style="width:12px;height:12px;" class="spin"></i> 保存中…';
+    } else if (type === 'saved') {
+      el.className = 'save-status-indicator save-status-saved';
+      const nowTime = new Date().toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
+      el.innerHTML = `<i data-lucide="check" style="width:12px;height:12px;"></i> 保存済み ${nowTime}`;
+    } else if (type === 'error') {
+      el.className = 'save-status-indicator save-status-error';
+      el.innerHTML = `<i data-lucide="alert-triangle" style="width:12px;height:12px;"></i> ${msg || '保存に失敗しました'} <button id="btn-retry-save" class="btn-mini">再試行</button>`;
+      document.getElementById('btn-retry-save')?.addEventListener('click', () => this.flushPendingSaves());
+    }
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  scheduleAutoSave(record) {
+    this.pendingSaveResults.set(record.resultId, record);
+    this.showSaveStatus('saving');
+
+    if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
+    this.autoSaveTimer = setTimeout(() => {
+      this.flushPendingSaves();
+    }, 800);
+  }
+
+  flushPendingSaves() {
+    if (this.pendingSaveResults.size === 0) return true;
+    try {
+      this.pendingSaveResults.forEach(record => {
+        StorageService.saveScoutResult(record, this.currentStaff ? this.currentStaff.staffId : '');
+      });
+      this.pendingSaveResults.clear();
+      this.showSaveStatus('saved');
+      return true;
+    } catch (err) {
+      console.error('Auto save error:', err);
+      this.showSaveStatus('error', err.message);
+      return false;
+    }
+  }
+
+  /**
+   * 注力ランクバッジのレンダリング（通常表示 / 管理者編集可）
+   */
+  renderPriorityRankBadge(priorityRank, isEditable = false, companyId = '') {
+    const rankObj = PRIORITY_RANKS[priorityRank] || PRIORITY_RANKS.UNSET;
+    const bg = rankObj.color;
+    const textClr = rankObj.textColor || '#FFFFFF';
+
+    if (!isEditable) {
+      return `<span class="badge" style="background-color:${bg}; color:${textClr}; font-size:11px; font-weight:700; border:1px solid rgba(0,0,0,0.08); display:inline-flex; align-items:center; gap:4px; padding:3px 8px;">
+        ${this.escapeHtml(rankObj.fullLabel)}
+      </span>`;
+    }
+
+    return `
+      <div class="company-rank-editor" style="display:inline-flex; align-items:center; gap:6px;">
+        <select class="form-select select-company-rank" data-company-id="${companyId}" style="font-size:12px; padding:2px 6px; height:28px; width:130px; background-color:${bg}; color:${textClr}; font-weight:700; border-radius:4px; cursor:pointer;">
+          ${PRIORITY_RANK_LIST.map(r => {
+            const item = PRIORITY_RANKS[r];
+            return `<option value="${r}" ${r === priorityRank ? 'selected' : ''} style="background-color:#FFF; color:#333;">${item.fullLabel}</option>`;
+          }).join('')}
+        </select>
+        <span class="rank-save-status" data-company-id="${companyId}" style="font-size:11px; color:var(--text-secondary);"></span>
+      </div>
+    `;
+  }
+
+  // =========================================================================
+  // 1. 本日の実績入力画面
+  // =========================================================================
+  renderDailyEntryView(container) {
+    if (!this.currentStaff) return;
+
+    const userJobs = StorageService.getUserJobs(this.currentStaff.staffId).filter(uj => !uj.hidden);
+    const allJobsMap = new Map(StorageService.getJobs().map(j => [j.jobId, j]));
+    const mediaList = StorageService.getActiveMediaList();
+    const existingResultsMap = new Map(StorageService.getValidScoutResults()
+      .filter(r => r.staffId === this.currentStaff.staffId && r.date === this.entryDateStr)
+      .map(r => [`${r.jobId}_${r.mediaId}`, r]));
+
+    const userJobItems = [];
+    const todayResultsMap = new Map();
+
+    userJobs.forEach(uj => {
+      const job = allJobsMap.get(uj.jobId);
+      if (job && !job.archived) {
+        userJobItems.push({ uj, job });
+
+        // 当日送信・返信数の計算
+        let sent = 0, totalReply = 0, effectiveReply = 0;
+        mediaList.forEach(m => {
+          const rec = existingResultsMap.get(`${job.jobId}_${m.id}`);
+          if (rec) {
+            sent += Number(rec.sentCount || 0);
+            totalReply += Number(rec.totalReplyCount || 0);
+            effectiveReply += Number(rec.effectiveReplyCount || 0);
+          }
+        });
+        todayResultsMap.set(job.jobId, { sent, totalReply, effectiveReply });
+      }
+    });
+
+    // 検索・簡易絞り込み・ソートの適用
+    const filteredSortedItems = StorageService.sortUserJobsForEntry(userJobItems, {
+      searchKeyword: this.dailyEntrySearchKeyword,
+      filterType: this.dailyEntryFilterType,
+      sortBy: this.dailyEntrySortBy,
+      todayResultsMap
+    });
+
+    const activeUserJobs = filteredSortedItems.filter(({ job }) => job.status !== '一時停止' && job.status !== '募集終了');
+    const stoppedUserJobs = filteredSortedItems.filter(({ job }) => job.status === '一時停止' || job.status === '募集終了');
+
+    const jstToday = this.formatDate(new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })));
+
+    container.innerHTML = `
+      <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button id="btn-prev-day" class="btn btn-secondary btn-sm"><i data-lucide="chevron-left"></i> 前日</button>
+            <input type="date" id="entry-date-picker" class="form-control" style="width: 150px; font-weight: 600;" value="${this.entryDateStr}" max="${jstToday}">
+            <button id="btn-next-day" class="btn btn-secondary btn-sm" ${this.entryDateStr >= jstToday ? 'disabled' : ''}>翌日 <i data-lucide="chevron-right"></i></button>
+            <button id="btn-today" class="btn btn-gold btn-sm">今日へ戻る</button>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <button id="btn-manage-myjobs" class="btn btn-secondary btn-sm"><i data-lucide="plus-circle"></i> 担当求人を追加・整理</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 16px; padding: 14px 20px;">
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+            <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:240px;">
+              <div style="position:relative; width:100%; max-width:320px;">
+                <input type="text" id="daily-entry-search-input" class="form-control" placeholder="担当求人を検索 (企業名・求人名)" value="${this.escapeHtml(this.dailyEntrySearchKeyword)}" style="padding-left:32px;">
+                <i data-lucide="search" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-muted);"></i>
+              </div>
+              ${this.dailyEntrySearchKeyword ? `
+                <button id="btn-clear-entry-search" class="btn btn-secondary btn-sm">検索解除</button>
+              ` : ''}
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">並び替え:</span>
+              <select id="daily-entry-sort-select" class="form-select" style="width:210px; font-size:12px;">
+                <option value="standard" ${this.dailyEntrySortBy === 'standard' ? 'selected' : ''}>標準 (固定優先 企業名順)</option>
+                <option value="company_asc" ${this.dailyEntrySortBy === 'company_asc' ? 'selected' : ''}>企業名順：昇順</option>
+                <option value="company_desc" ${this.dailyEntrySortBy === 'company_desc' ? 'selected' : ''}>企業名順：降順</option>
+                <option value="job_title_asc" ${this.dailyEntrySortBy === 'job_title_asc' ? 'selected' : ''}>求人名順：昇順</option>
+                <option value="job_title_desc" ${this.dailyEntrySortBy === 'job_title_desc' ? 'selected' : ''}>求人名順：降順</option>
+                <option value="rank_desc" ${this.dailyEntrySortBy === 'rank_desc' ? 'selected' : ''}>注力ランク順：高い順</option>
+                <option value="sent_desc" ${this.dailyEntrySortBy === 'sent_desc' ? 'selected' : ''}>本日の送信数が多い順</option>
+                <option value="total_reply_desc" ${this.dailyEntrySortBy === 'total_reply_desc' ? 'selected' : ''}>本日の総返信数が多い順</option>
+                <option value="effective_reply_desc" ${this.dailyEntrySortBy === 'effective_reply_desc' ? 'selected' : ''}>本日の有効返信数が多い順</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12px;">
+            <span style="font-weight:700; color:var(--text-secondary); margin-right:4px;">絞り込み:</span>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'all' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="all">すべて</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'pinned' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="pinned"><i data-lucide="pin" style="width:12px;height:12px;"></i> 固定求人のみ</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'active' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="active">スカウト実施中</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'prep' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="prep">準備中</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'stopped' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="stopped">返信のみ入力可能</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'rank_SS' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="rank_SS">SS最重点</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'rank_S' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="rank_S">S重点</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'entered_media' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="entered_media">本日の実績あり</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="matrix-error-alert" style="display: none; margin-bottom: 16px;" class="notice-box" style="background-color:#FFF5F5; border-color:#FEB2B2; color:#C53030;"></div>
+
+      <div class="card">
+        <div class="card-header-flex">
+          <h3 class="card-title"><i data-lucide="table" style="color:var(--color-gold-accent);"></i> スカウト実績入力マトリクス (${this.entryDateStr})</h3>
+          <span style="font-size:12px; color:var(--text-secondary);">※セル内で送信・総返信・有効返信を直接入力または＋/－ボタン操作</span>
+        </div>
+
+        <div class="matrix-table-container">
+          <table class="matrix-table">
+            <thead>
+              <tr>
+                <th style="min-width: 260px; text-align: left; position: sticky; left: 0; z-index: 5;">企業名 / 求人名</th>
+                <th style="width: 80px;">ステータス</th>
+                ${mediaList.map(m => `<th style="min-width: 140px; border-top: 3px solid ${m.color || '#1A365D'};">${m.name}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${activeUserJobs.length === 0 ? `
+                <tr>
+                  <td colspan="${mediaList.length + 2}" style="padding: 32px; text-align: center; color: var(--text-muted); font-weight: 600;">
+                    ${this.dailyEntrySearchKeyword || this.dailyEntryFilterType !== 'all' ? '条件に一致する担当求人がありません' : '担当求人が登録されていません。「担当求人を追加・整理」ボタンから追加してください。'}
+                  </td>
+                </tr>
+              ` : activeUserJobs.map(({ uj, job }) => this.renderMatrixRow(uj, job, mediaList, existingResultsMap, false)).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        ${stoppedUserJobs.length > 0 ? `
+          <div class="stopped-jobs-section">
+            <div class="stopped-jobs-header" id="toggle-stopped-jobs">
+              <i data-lucide="chevron-down"></i> 返信のみ入力可能な求人 (一時停止・募集終了: ${stoppedUserJobs.length}件)
+            </div>
+            <div id="stopped-jobs-container" class="matrix-table-container">
+              <table class="matrix-table">
+                <thead>
+                  <tr>
+                    <th style="min-width: 260px; text-align: left;">企業名 / 求人名</th>
+                    <th style="width: 80px;">ステータス</th>
+                    ${mediaList.map(m => `<th>${m.name}</th>`).join('')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${stoppedUserJobs.map(({ uj, job }) => this.renderMatrixRow(uj, job, mediaList, existingResultsMap, true)).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    this.bindMatrixEvents(container, mediaList);
+  }
+
+  renderMatrixRow(uj, job, mediaList, existingResultsMap, isStopped) {
+    const isPinned = uj.pinned;
+    const rankBadgeHtml = this.renderPriorityRankBadge(job.priorityRank, false);
+
+    return `
+      <tr data-job-id="${job.jobId}">
+        <td style="text-align: left; position: sticky; left: 0; background-color: #FFFFFF; z-index: 4;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+            <div>
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <span style="font-weight: 700; color: var(--color-navy-main); font-size: 13px;">${this.escapeHtml(job.companyName)}</span>
+                ${rankBadgeHtml}
+              </div>
+              <div style="font-size: 11.5px; color: var(--text-secondary); margin-top:2px;">${this.escapeHtml(job.jobTitle)}</div>
+            </div>
+            <div style="display: flex; gap: 2px;">
+              <button class="btn-mini btn-pin-job" data-staff-job-id="${uj.staffJobId}" title="${isPinned ? '固定解除' : '上部へ固定'}">
+                <i data-lucide="pin" style="width:12px;height:12px; ${isPinned ? 'color:var(--color-gold-accent);fill:var(--color-gold-accent);' : 'color:#CBD5E0;'}"></i>
+              </button>
+              <button class="btn-mini btn-hide-job" data-staff-job-id="${uj.staffJobId}" title="非表示にする">
+                <i data-lucide="eye-off" style="width:12px;height:12px; color:#A0AEC0;"></i>
+              </button>
+            </div>
+          </div>
+        </td>
+        <td>
+          <span class="badge ${job.status === 'スカウト実施中' ? 'badge-success' : job.status === '準備中' ? 'badge-gold' : 'badge-gray'}">${job.status}</span>
+        </td>
+        ${mediaList.map(m => {
+          const recKey = `${job.jobId}_${m.id}`;
+          const rec = existingResultsMap.get(recKey) || { sentCount: 0, totalReplyCount: 0, effectiveReplyCount: 0 };
+          return `
+            <td>
+              <div class="media-subcell-container" data-job-id="${job.jobId}" data-media-id="${m.id}">
+                <div class="subcell-row">
+                  <span class="subcell-label">送信</span>
+                  <input type="number" min="0" class="subcell-input input-sent" value="${rec.sentCount}" ${isStopped ? 'disabled title="一時停止・募集終了のため送信入力不可"' : ''}>
+                  ${!isStopped ? `
+                    <div class="subcell-btns">
+                      <button class="btn-mini btn-step-sent" data-step="1">+1</button>
+                      <button class="btn-mini btn-step-sent" data-step="5">+5</button>
+                      <button class="btn-mini btn-step-sent" data-step="10">+10</button>
+                      <button class="btn-mini btn-step-sent" data-step="-1">-1</button>
+                    </div>
+                  ` : ''}
+                </div>
+                <div class="subcell-row">
+                  <span class="subcell-label">総返信</span>
+                  <input type="number" min="0" class="subcell-input input-total-reply" value="${rec.totalReplyCount}">
+                  <div class="subcell-btns">
+                    <button class="btn-mini btn-add-total-reply">+1</button>
+                  </div>
+                </div>
+                <div class="subcell-row">
+                  <span class="subcell-label" style="color:var(--color-navy-main); font-weight:700;">有効返信</span>
+                  <input type="number" min="0" class="subcell-input input-effective-reply" value="${rec.effectiveReplyCount}">
+                  <div class="subcell-btns">
+                    <button class="btn-mini btn-add-effective-reply" style="background:var(--color-gold-light); border-color:var(--color-gold-accent);">+1</button>
+                  </div>
+                </div>
+              </div>
+            </td>
+          `;
+        }).join('')}
+      </tr>
+    `;
+  }
+
+  bindMatrixEvents(container, mediaList) {
+    const picker = container.querySelector('#entry-date-picker');
+    picker?.addEventListener('change', (e) => {
+      this.entryDateStr = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-prev-day')?.addEventListener('click', () => {
+      const d = new Date(this.entryDateStr);
+      d.setDate(d.getDate() - 1);
+      this.entryDateStr = this.formatDate(d);
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-next-day')?.addEventListener('click', () => {
+      const d = new Date(this.entryDateStr);
+      d.setDate(d.getDate() + 1);
+      this.entryDateStr = this.formatDate(d);
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-today')?.addEventListener('click', () => {
+      this.entryDateStr = this.formatDate(new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })));
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-manage-myjobs')?.addEventListener('click', () => {
+      this.openManageMyJobsModal();
+    });
+
+    // 検索・絞り込み・ソートイベント
+    const searchInp = container.querySelector('#daily-entry-search-input');
+    searchInp?.addEventListener('input', (e) => {
+      this.dailyEntrySearchKeyword = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-clear-entry-search')?.addEventListener('click', () => {
+      this.dailyEntrySearchKeyword = '';
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#daily-entry-sort-select')?.addEventListener('change', (e) => {
+      this.dailyEntrySortBy = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelectorAll('.btn-filter-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.dailyEntryFilterType = btn.getAttribute('data-filter-type');
+        this.renderCurrentView();
+      });
+    });
+
+    container.querySelectorAll('.btn-pin-job').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const staffJobId = btn.getAttribute('data-staff-job-id');
+        const list = StorageService.getUserJobs(this.currentStaff.staffId);
+        const uj = list.find(item => item.staffJobId === staffJobId);
+        if (uj) {
+          StorageService.updateUserJob(staffJobId, { pinned: !uj.pinned });
+          this.renderCurrentView();
+        }
+      });
+    });
+
+    container.querySelectorAll('.btn-hide-job').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const staffJobId = btn.getAttribute('data-staff-job-id');
+        if (confirm('この求人を実績入力画面で非表示にしますか？')) {
+          StorageService.updateUserJob(staffJobId, { hidden: true });
+          this.renderCurrentView();
+        }
+      });
+    });
+
+    container.querySelectorAll('.media-subcell-container').forEach(cell => {
+      const jobId = cell.getAttribute('data-job-id');
+      const mediaId = cell.getAttribute('data-media-id');
+
+      const inputSent = cell.querySelector('.input-sent');
+      const inputTotal = cell.querySelector('.input-total-reply');
+      const inputEffective = cell.querySelector('.input-effective-reply');
+
+      const handleUpdate = () => {
+        const sent = Math.max(0, parseInt(inputSent ? inputSent.value : '0', 10) || 0);
+        const total = Math.max(0, parseInt(inputTotal.value, 10) || 0);
+        const effective = Math.max(0, parseInt(inputEffective.value, 10) || 0);
+
+        const errorEl = container.querySelector('#matrix-error-alert');
+
+        if (effective > total) {
+          if (errorEl) {
+            errorEl.style.display = 'flex';
+            errorEl.innerHTML = `<i data-lucide="alert-circle"></i> 有効返信数(${effective})は総返信数(${total})以下である必要があります。`;
+            if (window.lucide) window.lucide.createIcons();
+          }
+          return;
+        } else {
+          if (errorEl) errorEl.style.display = 'none';
+        }
+
+        const resultRecord = {
+          resultId: `${this.currentStaff.staffId}_${jobId}_${this.entryDateStr}_${mediaId}`,
+          staffId: this.currentStaff.staffId,
+          jobId,
+          date: this.entryDateStr,
+          mediaId,
+          sentCount: sent,
+          totalReplyCount: total,
+          effectiveReplyCount: effective
+        };
+
+        this.scheduleAutoSave(resultRecord);
+      };
+
+      [inputSent, inputTotal, inputEffective].forEach(inp => {
+        inp?.addEventListener('input', handleUpdate);
+        inp?.addEventListener('blur', handleUpdate);
+      });
+
+      cell.querySelectorAll('.btn-step-sent').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const step = parseInt(btn.getAttribute('data-step'), 10);
+          const curr = Math.max(0, parseInt(inputSent.value, 10) || 0);
+          inputSent.value = Math.max(0, curr + step);
+          handleUpdate();
+        });
+      });
+
+      cell.querySelector('.btn-add-total-reply')?.addEventListener('click', () => {
+        const curr = Math.max(0, parseInt(inputTotal.value, 10) || 0);
+        inputTotal.value = curr + 1;
+        handleUpdate();
+      });
+
+      cell.querySelector('.btn-add-effective-reply')?.addEventListener('click', () => {
+        const currTotal = Math.max(0, parseInt(inputTotal.value, 10) || 0);
+        const currEff = Math.max(0, parseInt(inputEffective.value, 10) || 0);
+        inputTotal.value = currTotal + 1;
+        inputEffective.value = currEff + 1;
+        handleUpdate();
+      });
+    });
+  }
+
+  // =========================================================================
+  // 2. ダッシュボード画面 (手動・自動・総スカウトの明確区別 & 積み上げグラフ)
+  // =========================================================================
+  renderDashboardView(container) {
+    const scopeStaffId = this.dashboardScopeStaffId || this.currentStaff.staffId;
+    const periodKey = this.dashboardPeriodKey || 'week';
+    const isTeamManual = scopeStaffId === 'TEAM_MANUAL' || scopeStaffId === 'TEAM';
+    const isAutoScout = scopeStaffId === 'AUTO_SCOUT';
+    const isTotalScout = scopeStaffId === 'TOTAL_SCOUT';
+
+    const range = AnalyticsService.getPeriodRange(periodKey);
+
+    // フィルタリング
+    let manualResults = [];
+    if (scopeStaffId !== 'AUTO_SCOUT') {
+      manualResults = AnalyticsService.filterResults({
+        staffId: (isTeamManual || isTotalScout) ? '' : scopeStaffId,
+        periodKey
+      });
+    }
+
+    let autoResults = [];
+    if (scopeStaffId === 'AUTO_SCOUT' || scopeStaffId === 'TOTAL_SCOUT' || isTeamManual) {
+      autoResults = AnalyticsService.filterAutoScoutResults({ periodKey });
+    }
+
+    const totalMetrics = AnalyticsService.calculateTotalScoutMetrics(manualResults, autoResults);
+    const manualMetrics = totalMetrics.manual;
+    const autoMetrics = totalMetrics.auto;
+    const combinedMetrics = totalMetrics.total;
+
+    let displaySent = manualMetrics.sentCount;
+    let displayTotalReply = manualMetrics.totalReplyCount;
+    let displayEffectiveReply = manualMetrics.effectiveReplyCount;
+    let displayTRate = manualMetrics.totalReplyRateFormatted;
+    let displayERate = manualMetrics.effectiveReplyRateFormatted;
+
+    if (isAutoScout) {
+      displaySent = autoMetrics.sentCount;
+      displayTotalReply = autoMetrics.totalReplyCount;
+      displayEffectiveReply = autoMetrics.effectiveReplyCount;
+      displayTRate = autoMetrics.totalReplyRateFormatted;
+      displayERate = autoMetrics.effectiveReplyRateFormatted;
+    } else if (isTotalScout) {
+      displaySent = combinedMetrics.sentCount;
+      displayTotalReply = combinedMetrics.totalReplyCount;
+      displayEffectiveReply = combinedMetrics.effectiveReplyCount;
+      displayTRate = combinedMetrics.totalReplyRateFormatted;
+      displayERate = combinedMetrics.effectiveReplyRateFormatted;
+    }
+
+    container.innerHTML = `
+      <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">表示対象:</span>
+            <select id="dash-scope-select" class="form-select" style="width: 250px; font-weight: 600;">
+              <option value="${this.currentStaff.staffId}" ${scopeStaffId === this.currentStaff.staffId ? 'selected' : ''}>自分の実績 [手動] (${this.currentStaff.name})</option>
+              <option value="TEAM_MANUAL" ${isTeamManual ? 'selected' : ''}>チーム手動実績 (全体合計)</option>
+              <option value="AUTO_SCOUT" ${isAutoScout ? 'selected' : ''}>自動スカウト実績 (システム送信)</option>
+              <option value="TOTAL_SCOUT" ${isTotalScout ? 'selected' : ''}>総スカウト実績 (手動＋自動)</option>
+              <option value="INBOUND" ${scopeStaffId === 'INBOUND' ? 'selected' : ''}>直接エントリー実績 (インバウンド)</option>
+              <option value="TOTAL_ALL" ${scopeStaffId === 'TOTAL_ALL' ? 'selected' : ''}>総獲得実績 (スカウト＋インバウンド)</option>
+              ${this.isAdminMode ? StorageService.getActiveUsers().map(u => `
+                <option value="${u.staffId}" ${scopeStaffId === u.staffId ? 'selected' : ''}>【個別】${u.name}</option>
+              `).join('') : ''}
+            </select>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">期間:</span>
+            <select id="dash-period-select" class="form-select" style="width: 140px;">
+              <option value="today" ${periodKey === 'today' ? 'selected' : ''}>今日</option>
+              <option value="week" ${periodKey === 'week' ? 'selected' : ''}>今週</option>
+              <option value="month" ${periodKey === 'month' ? 'selected' : ''}>今月</option>
+              <option value="3months" ${periodKey === '3months' ? 'selected' : ''}>3か月</option>
+              <option value="halfYear" ${periodKey === 'halfYear' ? 'selected' : ''}>半年</option>
+              <option value="year" ${periodKey === 'year' ? 'selected' : ''}>1年</option>
+            </select>
+          </div>
+        </div>
+        
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-top: 10px; flex-wrap:wrap; gap:8px;">
+          <div style="font-size: 12px; color: var(--color-gold-hover); font-weight: 600;">
+            集計対象期間: ${range.label}
+          </div>
+          ${(periodKey === 'today' && (isAutoScout || isTotalScout)) ? `
+            <div style="font-size:11.5px; color:#C53030; background:#FFF5F5; border:1px solid #FEB2B2; padding:3px 8px; border-radius:4px;">
+              <i data-lucide="info" style="width:12px;height:12px;"></i> 自動スカウトは週次記録のため、今日の集計には含まれません。
+            </div>
+          ` : ''}
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">${isTotalScout ? '総スカウト送信数' : isAutoScout ? '自動スカウト送信数' : '手動スカウト送信数'}</div>
+          <div class="kpi-value">${displaySent.toLocaleString()}<span style="font-size:12px; font-weight:normal;"> 件</span></div>
+          ${isTotalScout ? `<div class="kpi-sub">手動: ${manualMetrics.sentCount}件 (${combinedMetrics.manualSentShare}) / 自動: ${autoMetrics.sentCount}件 (${combinedMetrics.autoSentShare})</div>` : ''}
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">総返信数</div>
+          <div class="kpi-value">${displayTotalReply.toLocaleString()}<span style="font-size:12px; font-weight:normal;"> 件</span></div>
+          ${isTotalScout ? `<div class="kpi-sub">手動: ${manualMetrics.totalReplyCount}件 / 自動: ${autoMetrics.totalReplyCount}件</div>` : ''}
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">有効返信数</div>
+          <div class="kpi-value" style="color:var(--color-gold-accent);">${displayEffectiveReply.toLocaleString()}<span style="font-size:12px; font-weight:normal;"> 件</span></div>
+          ${isTotalScout ? `<div class="kpi-sub">手動: ${manualMetrics.effectiveReplyCount}件 / 自動: ${autoMetrics.effectiveReplyCount}件</div>` : ''}
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">参考総返信率</div>
+          <div class="kpi-value">${displayTRate}</div>
+          <div class="kpi-sub">※返信日基準のため参考値</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">参考有効返信率</div>
+          <div class="kpi-value" style="color:var(--color-gold-accent);">${displayERate}</div>
+          <div class="kpi-sub">※返信日基準のため参考値</div>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <div class="tab-item ${this.activeDashboardTab === 'overview' ? 'active' : ''}" data-dash-tab="overview">概要・比較</div>
+        <div class="tab-item ${this.activeDashboardTab === 'by-job' ? 'active' : ''}" data-dash-tab="by-job">求人別詳細</div>
+        <div class="tab-item ${this.activeDashboardTab === 'by-media' ? 'active' : ''}" data-dash-tab="by-media">媒体別詳細</div>
+        <div class="tab-item ${this.activeDashboardTab === 'trends' ? 'active' : ''}" data-dash-tab="trends">曜日・推移</div>
+      </div>
+
+      <div id="dash-tab-content"></div>
+    `;
+
+    container.querySelector('#dash-scope-select')?.addEventListener('change', (e) => {
+      this.dashboardScopeStaffId = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#dash-period-select')?.addEventListener('change', (e) => {
+      this.dashboardPeriodKey = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelectorAll('[data-dash-tab]').forEach(tab => {
+      tab.addEventListener('click', () => {
+        this.activeDashboardTab = tab.getAttribute('data-dash-tab');
+        this.renderCurrentView();
+      });
+    });
+
+    const tabContainer = container.querySelector('#dash-tab-content');
+    if (tabContainer) {
+      if (this.activeDashboardTab === 'overview') {
+        this.renderDashOverview(tabContainer, manualResults, autoResults, scopeStaffId, periodKey);
+      } else if (this.activeDashboardTab === 'by-job') {
+        this.renderDashByJob(tabContainer, manualResults, autoResults, scopeStaffId);
+      } else if (this.activeDashboardTab === 'by-media') {
+        this.renderDashByMedia(tabContainer, manualResults, autoResults, scopeStaffId);
+      } else if (this.activeDashboardTab === 'trends') {
+        this.renderDashTrends(tabContainer, manualResults);
+      }
+    }
+  }
+
+  renderDashOverview(container, manualResults, autoResults, scopeStaffId, periodKey) {
+    const isTotalOrTeam = scopeStaffId === 'TOTAL_SCOUT' || scopeStaffId === 'TEAM_MANUAL' || scopeStaffId === 'TEAM';
+    const totalJobStats = AnalyticsService.aggregateTotalByJob(manualResults, autoResults);
+    const mediaStats = AnalyticsService.aggregateTotalByMedia(manualResults, autoResults);
+
+    container.innerHTML = `
+      <div class="grid-2">
+        <div class="card">
+          <h4 class="card-title"><i data-lucide="layers"></i> チーム手動 vs 自動スカウト 送信実績比較</h4>
+          <div class="chart-container" style="margin-top: 12px;"><canvas id="stackedScoutChart"></canvas></div>
+        </div>
+
+        <div class="card">
+          <h4 class="card-title"><i data-lucide="pie-chart"></i> 媒体別総送信構成比</h4>
+          <div class="chart-container" style="margin-top: 12px;"><canvas id="mediaShareChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h4 class="card-title"><i data-lucide="award"></i> 総送信数上位求人 (TOP 5)</h4>
+        <div style="overflow-x:auto; margin-top:12px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>企業名 / 求人名</th>
+                <th>手動送信</th>
+                <th>自動送信</th>
+                <th>総送信数</th>
+                <th>手動有効返信</th>
+                <th>自動有効返信</th>
+                <th>総有効返信</th>
+                <th>参考総有効返信率</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${totalJobStats.slice(0, 5).map(j => `
+                <tr>
+                  <td><strong>${this.escapeHtml(j.companyName)}</strong><br><span style="font-size:11px;color:var(--text-secondary);">${this.escapeHtml(j.jobTitle)}</span></td>
+                  <td>${j.manualSent}件</td>
+                  <td>${j.autoSent}件</td>
+                  <td><strong>${j.totalSent}件</strong></td>
+                  <td>${j.manualEffReply}件</td>
+                  <td>${j.autoEffReply}件</td>
+                  <td><strong style="color:var(--color-gold-accent);">${j.totalEff}件</strong></td>
+                  <td>${j.effectiveReplyRateFormatted}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    setTimeout(() => {
+      const stackedCtx = document.getElementById('stackedScoutChart')?.getContext('2d');
+      if (stackedCtx && window.Chart) {
+        new Chart(stackedCtx, {
+          type: 'bar',
+          data: {
+            labels: mediaStats.map(m => m.name),
+            datasets: [
+              { label: 'チーム手動送信', data: mediaStats.map(m => m.manualSent), backgroundColor: '#1B2A4A' },
+              { label: '自動スカウト送信', data: mediaStats.map(m => m.autoSent), backgroundColor: '#C5A059' }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { x: { stacked: true }, y: { stacked: true } }
+          }
+        });
+      }
+
+      const ctx = document.getElementById('mediaShareChart')?.getContext('2d');
+      if (ctx && window.Chart) {
+        new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: mediaStats.map(m => m.name),
+            datasets: [{ data: mediaStats.map(m => m.totalSent), backgroundColor: mediaStats.map(m => m.color) }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+      }
+    }, 50);
+  }
+
+  renderDashByJob(container, manualResults, autoResults, scopeStaffId) {
+    const totalJobStats = AnalyticsService.aggregateTotalByJob(manualResults, autoResults);
+    const top10Jobs = totalJobStats.slice(0, 10);
+
+    container.innerHTML = `
+      <div class="grid-2" style="margin-bottom: 16px;">
+        <div class="card">
+          <h4 class="card-title"><i data-lucide="bar-chart-2"></i> TOP10 求人別 送信数内訳 (手動 vs 自動)</h4>
+          <div class="chart-container" style="margin-top: 12px; height: 260px;"><canvas id="jobSentChart"></canvas></div>
+        </div>
+        <div class="card">
+          <h4 class="card-title"><i data-lucide="trending-up"></i> TOP10 求人別 有効返信数比較 (手動 vs 自動)</h4>
+          <div class="chart-container" style="margin-top: 12px; height: 260px;"><canvas id="jobEffChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header-flex">
+          <h4 class="card-title"><i data-lucide="briefcase"></i> 求人別詳細実績マトリクス (手動・自動・合算)</h4>
+          <button id="btn-export-dash-job-csv" class="btn btn-secondary btn-sm"><i data-lucide="download"></i> この求人別集計をCSV出力</button>
+        </div>
+        <div style="overflow-x: auto; margin-top: 16px;">
+          <table class="data-table" style="border-collapse: collapse;">
+            <thead>
+              <tr>
+                <th rowspan="2" style="min-width: 220px; vertical-align: middle; text-align: left;">企業名 / 求人名</th>
+                <th rowspan="2" style="min-width: 95px; vertical-align: middle; text-align: center;">注力ランク</th>
+                <th colspan="3" style="text-align: center; background-color: #F0F4F8; color: #1B2A4A; border-bottom: 2px solid #1B2A4A; font-weight: 700;">スカウト送信数</th>
+                <th colspan="3" style="text-align: center; background-color: #FAF6ED; color: #9B6D16; border-bottom: 2px solid #C5A059; font-weight: 700;">総返信数</th>
+                <th colspan="3" style="text-align: center; background-color: #EDF2F7; color: #2B6CB0; border-bottom: 2px solid #2B6CB0; font-weight: 700;">有効返信数</th>
+                <th colspan="2" style="text-align: center; background-color: #F7FAFC; color: #4A5568; border-bottom: 2px solid #A0AEC0; font-weight: 700;">返信率（参考）</th>
+              </tr>
+              <tr>
+                <th style="text-align: center; background-color: #F8FAFC; min-width: 55px; font-size: 11.5px;">手動</th>
+                <th style="text-align: center; background-color: #F8FAFC; min-width: 55px; font-size: 11.5px;">自動</th>
+                <th style="text-align: center; background-color: #E2E8F0; min-width: 60px; font-weight: 700; font-size: 12px; color: #1A202C;">合計</th>
+
+                <th style="text-align: center; background-color: #FFFDF9; min-width: 55px; font-size: 11.5px;">手動</th>
+                <th style="text-align: center; background-color: #FFFDF9; min-width: 55px; font-size: 11.5px;">自動</th>
+                <th style="text-align: center; background-color: #FFEAE5; min-width: 60px; font-weight: 700; font-size: 12px; color: #9B6D16;">合計</th>
+
+                <th style="text-align: center; background-color: #F7FAFC; min-width: 55px; font-size: 11.5px;">手動</th>
+                <th style="text-align: center; background-color: #F7FAFC; min-width: 55px; font-size: 11.5px;">自動</th>
+                <th style="text-align: center; background-color: #FEFCBF; min-width: 60px; font-weight: 700; font-size: 12px; color: #B7791F;">合計</th>
+
+                <th style="text-align: center; background-color: #FAFAFA; min-width: 75px; font-size: 11.5px;">総返信率</th>
+                <th style="text-align: center; background-color: #FAFAFA; min-width: 75px; font-size: 11.5px;">有効返信率</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${totalJobStats.length === 0 ? `
+                <tr><td colspan="13" style="text-align:center; padding:24px; color:var(--text-muted);">対象期間の実績がありません</td></tr>
+              ` : totalJobStats.map(j => {
+                const rankBadgeHtml = this.renderPriorityRankBadge(j.priorityRank, false);
+                return `
+                  <tr>
+                    <td style="text-align:left;"><strong>${this.escapeHtml(j.companyName)}</strong><br><span style="font-size:11px;color:var(--text-secondary);">${this.escapeHtml(j.jobTitle)}</span></td>
+                    <td style="text-align:center;">${rankBadgeHtml}</td>
+                    <td style="text-align:right;">${j.manualSent}件</td>
+                    <td style="text-align:right;">${j.autoSent}件</td>
+                    <td style="text-align:right; font-weight:700; background-color:#F7FAFC;">${j.totalSent}件</td>
+                    <td style="text-align:right;">${j.manualTotalReply}件</td>
+                    <td style="text-align:right;">${j.autoTotalReply}件</td>
+                    <td style="text-align:right; font-weight:700; background-color:#FFFDF9;">${j.totalReply}件</td>
+                    <td style="text-align:right;">${j.manualEffReply}件</td>
+                    <td style="text-align:right;">${j.autoEffReply}件</td>
+                    <td style="text-align:right; font-weight:700; background-color:#FEFCBF; color:#B7791F;">${j.totalEff}件</td>
+                    <td style="text-align:right;">${j.totalReplyRateFormatted}</td>
+                    <td style="text-align:right; font-weight:600;">${j.effectiveReplyRateFormatted}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    container.querySelector('#btn-export-dash-job-csv')?.addEventListener('click', () => {
+      StorageService.exportCSV('total_job_summary');
+    });
+
+    setTimeout(() => {
+      if (top10Jobs.length > 0 && window.Chart) {
+        const labels = top10Jobs.map(j => j.companyName.length > 8 ? j.companyName.slice(0, 8) + '…' : j.companyName);
+
+        const ctxSent = document.getElementById('jobSentChart')?.getContext('2d');
+        if (ctxSent) {
+          new Chart(ctxSent, {
+            type: 'bar',
+            data: {
+              labels,
+              datasets: [
+                { label: '手動送信', data: top10Jobs.map(j => j.manualSent), backgroundColor: '#1B2A4A' },
+                { label: '自動スカウト', data: top10Jobs.map(j => j.autoSent), backgroundColor: '#C5A059' }
+              ]
+            },
+            options: {
+              indexAxis: 'y',
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: { x: { stacked: true }, y: { stacked: true } }
+            }
+          });
+        }
+
+        const ctxEff = document.getElementById('jobEffChart')?.getContext('2d');
+        if (ctxEff) {
+          new Chart(ctxEff, {
+            type: 'bar',
+            data: {
+              labels,
+              datasets: [
+                { label: '手動有効返信', data: top10Jobs.map(j => j.manualEffReply), backgroundColor: '#2B6CB0' },
+                { label: '自動有効返信', data: top10Jobs.map(j => j.autoEffReply), backgroundColor: '#D69E2E' }
+              ]
+            },
+            options: {
+              indexAxis: 'y',
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: { x: { stacked: true }, y: { stacked: true } }
+            }
+          });
+        }
+      }
+    }, 50);
+  }
+
+  renderDashByMedia(container, manualResults, autoResults, scopeStaffId) {
+    const mediaStats = AnalyticsService.aggregateTotalByMedia(manualResults, autoResults);
+
+    container.innerHTML = `
+      <div class="grid-2" style="margin-bottom: 16px;">
+        <div class="card">
+          <h4 class="card-title"><i data-lucide="bar-chart-2"></i> 媒体別 送信数内訳 (手動 vs 自動)</h4>
+          <div class="chart-container" style="margin-top: 12px; height: 260px;"><canvas id="mediaSentChart"></canvas></div>
+        </div>
+        <div class="card">
+          <h4 class="card-title"><i data-lucide="pie-chart"></i> 媒体別 有効返信数比較 (手動 vs 自動)</h4>
+          <div class="chart-container" style="margin-top: 12px; height: 260px;"><canvas id="mediaEffChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header-flex">
+          <h4 class="card-title"><i data-lucide="layers"></i> 媒体別詳細成果比較 (手動・自動・合算)</h4>
+          <button id="btn-export-dash-media-csv" class="btn btn-secondary btn-sm"><i data-lucide="download"></i> この媒体別集計をCSV出力</button>
+        </div>
+        <div style="overflow-x: auto; margin-top: 16px;">
+          <table class="data-table" style="border-collapse: collapse;">
+            <thead>
+              <tr>
+                <th rowspan="2" style="min-width: 140px; vertical-align: middle; text-align: left;">媒体名</th>
+                <th colspan="3" style="text-align: center; background-color: #F0F4F8; color: #1B2A4A; border-bottom: 2px solid #1B2A4A; font-weight: 700;">スカウト送信数</th>
+                <th colspan="3" style="text-align: center; background-color: #FAF6ED; color: #9B6D16; border-bottom: 2px solid #C5A059; font-weight: 700;">総返信数</th>
+                <th colspan="3" style="text-align: center; background-color: #EDF2F7; color: #2B6CB0; border-bottom: 2px solid #2B6CB0; font-weight: 700;">有効返信数</th>
+                <th colspan="2" style="text-align: center; background-color: #F7FAFC; color: #4A5568; border-bottom: 2px solid #A0AEC0; font-weight: 700;">返信率（参考）</th>
+              </tr>
+              <tr>
+                <th style="text-align: center; background-color: #F8FAFC; min-width: 60px; font-size: 11.5px;">手動</th>
+                <th style="text-align: center; background-color: #F8FAFC; min-width: 60px; font-size: 11.5px;">自動</th>
+                <th style="text-align: center; background-color: #E2E8F0; min-width: 65px; font-weight: 700; font-size: 12px; color: #1A202C;">合計</th>
+
+                <th style="text-align: center; background-color: #FFFDF9; min-width: 60px; font-size: 11.5px;">手動</th>
+                <th style="text-align: center; background-color: #FFFDF9; min-width: 60px; font-size: 11.5px;">自動</th>
+                <th style="text-align: center; background-color: #FFEAE5; min-width: 65px; font-weight: 700; font-size: 12px; color: #9B6D16;">合計</th>
+
+                <th style="text-align: center; background-color: #F7FAFC; min-width: 60px; font-size: 11.5px;">手動</th>
+                <th style="text-align: center; background-color: #F7FAFC; min-width: 60px; font-size: 11.5px;">自動</th>
+                <th style="text-align: center; background-color: #FEFCBF; min-width: 65px; font-weight: 700; font-size: 12px; color: #B7791F;">合計</th>
+
+                <th style="text-align: center; background-color: #FAFAFA; min-width: 80px; font-size: 11.5px;">総返信率</th>
+                <th style="text-align: center; background-color: #FAFAFA; min-width: 80px; font-size: 11.5px;">有効返信率</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${mediaStats.map(m => `
+                <tr>
+                  <td style="text-align:left;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${m.color};margin-right:6px;"></span><strong>${m.name}</strong></td>
+                  <td style="text-align:right;">${m.manualSent}件</td>
+                  <td style="text-align:right;">${m.autoSent}件</td>
+                  <td style="text-align:right; font-weight:700; background-color:#F7FAFC;">${m.totalSent}件</td>
+                  <td style="text-align:right;">${m.manualTotalReply}件</td>
+                  <td style="text-align:right;">${m.autoTotalReply}件</td>
+                  <td style="text-align:right; font-weight:700; background-color:#FFFDF9;">${m.totalReply}件</td>
+                  <td style="text-align:right;">${m.manualEffReply}件</td>
+                  <td style="text-align:right;">${m.autoEffReply}件</td>
+                  <td style="text-align:right; font-weight:700; background-color:#FEFCBF; color:#B7791F;">${m.totalEff}件</td>
+                  <td style="text-align:right;">${m.totalReplyRateFormatted}</td>
+                  <td style="text-align:right; font-weight:600;">${m.effectiveReplyRateFormatted}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    container.querySelector('#btn-export-dash-media-csv')?.addEventListener('click', () => {
+      StorageService.exportCSV('media_summary');
+    });
+
+    setTimeout(() => {
+      if (window.Chart) {
+        const labels = mediaStats.map(m => m.name);
+        const ctxSent = document.getElementById('mediaSentChart')?.getContext('2d');
+        if (ctxSent) {
+          new Chart(ctxSent, {
+            type: 'bar',
+            data: {
+              labels,
+              datasets: [
+                { label: '手動送信', data: mediaStats.map(m => m.manualSent), backgroundColor: '#1B2A4A' },
+                { label: '自動送信', data: mediaStats.map(m => m.autoSent), backgroundColor: '#C5A059' }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: { x: { stacked: true }, y: { stacked: true } }
+            }
+          });
+        }
+
+        const ctxEff = document.getElementById('mediaEffChart')?.getContext('2d');
+        if (ctxEff) {
+          new Chart(ctxEff, {
+            type: 'bar',
+            data: {
+              labels,
+              datasets: [
+                { label: '手動有効返信', data: mediaStats.map(m => m.manualEffReply), backgroundColor: '#2B6CB0' },
+                { label: '自動有効返信', data: mediaStats.map(m => m.autoEffReply), backgroundColor: '#D69E2E' }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: { x: { stacked: true }, y: { stacked: true } }
+            }
+          });
+        }
+      }
+    }, 50);
+  }
+
+  // =========================================================================
+  // 自動スカウト週次実績入力画面 (対象求人選択・権限制御・大量案件対応UI)
+  // =========================================================================
+  renderAutoScoutView(container) {
+    const weekRange = StorageService.getWeekRange(this.autoScoutWeekDateStr);
+    const mediaList = StorageService.getActiveMediaList();
+    const allJobs = StorageService.getJobs().filter(j => !j.archived);
+    const targetJobIds = new Set(StorageService.getAutoScoutTargetJobIds());
+
+    const canEdit = StorageService.canEditAutoScout(this.currentStaff ? this.currentStaff.staffId : '', this.isAdminMode);
+
+    const allAutoWeekly = StorageService.getAutoScoutWeeklyResults();
+    const weekAutoMap = new Map();
+    let isWeekConfirmed = false;
+
+    allAutoWeekly.filter(r => r.weekStartDate === weekRange.weekStartDate).forEach(r => {
+      weekAutoMap.set(`${r.jobId}_${r.mediaId}`, r);
+      if (r.confirmationStatus === 'confirmed') isWeekConfirmed = true;
+    });
+
+    let scopeFilteredJobs = [];
+    if (this.autoScoutScopeFilter === 'target_only') {
+      scopeFilteredJobs = allJobs.filter(j => targetJobIds.has(j.jobId));
+    } else if (this.autoScoutScopeFilter === 'all') {
+      scopeFilteredJobs = allJobs;
+    } else if (this.autoScoutScopeFilter === 'entered') {
+      scopeFilteredJobs = allJobs.filter(j => mediaList.some(m => weekAutoMap.has(`${j.jobId}_${m.id}`)));
+    } else if (this.autoScoutScopeFilter === 'unentered') {
+      const targetJobs = allJobs.filter(j => targetJobIds.has(j.jobId));
+      scopeFilteredJobs = targetJobs.filter(j => !mediaList.some(m => weekAutoMap.has(`${j.jobId}_${m.id}`)));
+    }
+
+    let displayJobs = StorageService.filterAndSortJobs(scopeFilteredJobs, {
+      searchKeyword: this.autoScoutSearchKeyword,
+      priorityRanks: this.autoScoutRankFilter ? [this.autoScoutRankFilter] : [],
+      statuses: this.autoScoutStatusFilter ? [this.autoScoutStatusFilter] : [],
+      sortBy: 'company_asc'
+    });
+
+    const enteredJobCount = allJobs.filter(j => mediaList.some(m => weekAutoMap.has(`${j.jobId}_${m.id}`))).length;
+    const targetCount = targetJobIds.size;
+    const unenteredCount = Math.max(0, targetCount - enteredJobCount);
+
+    container.innerHTML = `
+      <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button id="btn-auto-prev-week" class="btn btn-secondary btn-sm"><i data-lucide="chevron-left"></i> 前週</button>
+            <span style="font-weight: 700; font-size: 15px; color: var(--color-navy-main); background: #F8F6F2; padding: 6px 14px; border-radius: 6px; border: 1px solid #E6D5B8;">
+              <i data-lucide="calendar" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i> ${weekRange.displayLabel}
+            </span>
+            <button id="btn-auto-next-week" class="btn btn-secondary btn-sm">次週 <i data-lucide="chevron-right"></i></button>
+            <button id="btn-auto-this-week" class="btn btn-gold btn-sm">今週へ戻る</button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap:wrap;">
+            <span class="badge ${canEdit ? 'badge-success' : 'badge-gray'}" style="font-size:12px; padding:6px 10px;">
+              ${canEdit ? '<i data-lucide="unlock" style="width:12px;height:12px;"></i> 自動スカウト入力権限：あり' : '<i data-lucide="lock" style="width:12px;height:12px;"></i> 自動スカウト入力権限：なし (閲覧専用)'}
+            </span>
+            <span class="badge ${isWeekConfirmed ? 'badge-success' : 'badge-gold'}" style="font-size:12px; padding:6px 10px;">
+              ${isWeekConfirmed ? '<i data-lucide="check-circle" style="width:12px;height:12px;"></i> 週実績：確定済み' : '<i data-lucide="edit-3" style="width:12px;height:12px;"></i> 週実績：入力中'}
+            </span>
+            ${(canEdit || this.isAdminMode) ? `
+              <button id="btn-toggle-auto-week-confirm" class="btn ${isWeekConfirmed ? 'btn-secondary' : 'btn-navy'} btn-sm">
+                ${isWeekConfirmed ? '確定を解除して修正' : 'この週の実績を確定する'}
+              </button>
+              <button id="btn-open-auto-targets-modal" class="btn btn-gold btn-sm">
+                <i data-lucide="plus-circle"></i> 自動スカウト対象求人を追加・管理 (${targetCount}件)
+              </button>
+            ` : ''}
+          </div>
+        </div>
+        ${!canEdit ? `
+          <div class="notice-box" style="margin-top:12px; background-color:#F7FAFC; border-color:#CBD5E0; color:#4A5568; font-size:12px;">
+            <i data-lucide="lock"></i> 自動スカウト実績の入力・編集は、権限を持つ担当者または管理者モードでのみ可能です。
+          </div>
+        ` : ''}
+      </div>
+
+      <div class="card" style="margin-bottom: 16px; padding: 14px 20px;">
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">表示求人:</span>
+              <button class="btn btn-sm btn-auto-scope-tab ${this.autoScoutScopeFilter === 'target_only' ? 'btn-gold' : 'btn-secondary'}" data-scope="target_only">
+                対象求人のみ (${targetCount}件)
+              </button>
+              <button class="btn btn-sm btn-auto-scope-tab ${this.autoScoutScopeFilter === 'all' ? 'btn-gold' : 'btn-secondary'}" data-scope="all">
+                全求人を表示 (${allJobs.length}件)
+              </button>
+              <button class="btn btn-sm btn-auto-scope-tab ${this.autoScoutScopeFilter === 'entered' ? 'btn-gold' : 'btn-secondary'}" data-scope="entered">
+                今週入力済み (${enteredJobCount}件)
+              </button>
+              <button class="btn btn-sm btn-auto-scope-tab ${this.autoScoutScopeFilter === 'unentered' ? 'btn-gold' : 'btn-secondary'}" data-scope="unentered">
+                未入力求人 (${unenteredCount}件)
+              </button>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div style="position:relative; width:220px;">
+                <input type="text" id="auto-scout-search-input" class="form-control" placeholder="求人を検索" value="${this.escapeHtml(this.autoScoutSearchKeyword)}" style="padding-left:30px; font-size:12px;">
+                <i data-lucide="search" style="position:absolute; left:9px; top:50%; transform:translateY(-50%); width:13px; height:13px; color:var(--text-muted);"></i>
+              </div>
+              ${this.autoScoutSearchKeyword ? `<button id="btn-clear-auto-search" class="btn btn-secondary btn-sm">解除</button>` : ''}
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; border-top:1px solid #EDF2F7; padding-top:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">グループ表示:</span>
+              <button class="btn btn-sm btn-auto-group-mode ${this.autoScoutGroupMode === 'company' ? 'btn-navy' : 'btn-secondary'}" data-group-mode="company">
+                企業別
+              </button>
+              <button class="btn btn-sm btn-auto-group-mode ${this.autoScoutGroupMode === 'rank' ? 'btn-navy' : 'btn-secondary'}" data-group-mode="rank">
+                注力ランク別
+              </button>
+              <button class="btn btn-sm btn-auto-group-mode ${this.autoScoutGroupMode === 'flat' ? 'btn-navy' : 'btn-secondary'}" data-group-mode="flat">
+                リスト表示 (フラット)
+              </button>
+              <button id="btn-toggle-all-auto-groups" class="btn btn-secondary btn-sm" style="margin-left:8px;">
+                全グループ折りたたみ / 展開
+              </button>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">注力ランク:</span>
+              <select id="auto-scout-rank-select" class="form-select" style="width:130px; font-size:12px;">
+                <option value="">すべて</option>
+                ${PRIORITY_RANK_LIST.map(r => `<option value="${r}" ${this.autoScoutRankFilter === r ? 'selected' : ''}>${PRIORITY_RANKS[r].fullLabel}</option>`).join('')}
+              </select>
+              <span style="font-size:12px; font-weight:700; color:var(--text-secondary); margin-left:6px;">ステータス:</span>
+              <select id="auto-scout-status-select" class="form-select" style="width:130px; font-size:12px;">
+                <option value="">すべて</option>
+                ${JOB_STATUSES.map(st => `<option value="${st}" ${this.autoScoutStatusFilter === st ? 'selected' : ''}>${st}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header-flex">
+          <h3 class="card-title"><i data-lucide="cpu" style="color:var(--color-gold-accent);"></i> 自動スカウト週次実績マトリクス (${displayJobs.length}件表示 / 週: ${weekRange.weekStartDate}～)</h3>
+          <span style="font-size:12px; color:var(--text-secondary);">※対象求人の実績はチーム手動実績と分離保存され、総スカウト実績へ自動統合されます。</span>
+        </div>
+        <div class="matrix-table-container">
+          <table class="matrix-table" style="border-collapse: collapse;">
+            <thead>
+              <tr>
+                <th style="min-width: 260px; text-align: left; position: sticky; left: 0; z-index: 5;">企業名 / 求人名</th>
+                <th style="width: 85px;">対象設定</th>
+                <th style="width: 80px;">ステータス</th>
+                ${mediaList.map(m => `<th style="min-width: 140px; border-top: 3px solid ${m.color || '#1A365D'};">${m.name}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${displayJobs.length === 0 ? `
+                <tr>
+                  <td colspan="${mediaList.length + 3}" style="padding: 32px; text-align: center; color: var(--text-muted); font-weight: 600;">
+                    条件に一致する自動スカウト求人がありません
+                  </td>
+                </tr>
+              ` : this.renderAutoScoutGroupedRows(displayJobs, mediaList, weekAutoMap, weekRange, canEdit, isWeekConfirmed, targetJobIds)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    this.bindAutoScoutEvents(container, weekRange, isWeekConfirmed);
+  }
+
+  renderAutoScoutGroupedRows(jobs, mediaList, weekAutoMap, weekRange, canEdit, isWeekConfirmed, targetJobIds) {
+    if (this.autoScoutGroupMode === 'flat') {
+      return jobs.map(job => this.renderAutoScoutMatrixRow(job, mediaList, weekAutoMap, weekRange, canEdit, isWeekConfirmed, targetJobIds)).join('');
+    }
+
+    const groups = new Map();
+    if (this.autoScoutGroupMode === 'company') {
+      jobs.forEach(j => {
+        const key = j.companyName || 'その他企業';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(j);
+      });
+    } else if (this.autoScoutGroupMode === 'rank') {
+      PRIORITY_RANK_LIST.forEach(r => groups.set(r, []));
+      jobs.forEach(j => {
+        const key = j.priorityRank || 'UNSET';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(j);
+      });
+    }
+
+    let rowsHtml = '';
+    const colSpan = mediaList.length + 3;
+
+    groups.forEach((groupJobs, groupKey) => {
+      if (groupJobs.length === 0) return;
+      const isCollapsed = this.autoScoutCollapsedGroups.has(groupKey);
+      let groupTitle = groupKey;
+      let groupBadge = '';
+
+      if (this.autoScoutGroupMode === 'company') {
+        groupTitle = `企業: ${groupKey}`;
+      } else if (this.autoScoutGroupMode === 'rank') {
+        const rankObj = PRIORITY_RANKS[groupKey] || PRIORITY_RANKS.UNSET;
+        groupTitle = `注力ランク: ${rankObj.fullLabel}`;
+        groupBadge = `<span class="badge" style="background:${rankObj.color}; color:${rankObj.textColor || '#FFF'}; font-size:11px; margin-left:8px;">${groupJobs.length}件</span>`;
+      }
+
+      rowsHtml += `
+        <tr class="auto-group-header-row" data-group-key="${this.escapeHtml(groupKey)}" style="background-color: #F0F4F8; cursor: pointer; border-top: 2px solid #CBD5E0;">
+          <td colspan="${colSpan}" style="padding: 10px 16px; font-weight: 700; color: #1B2A4A; text-align: left;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <i data-lucide="${isCollapsed ? 'chevron-right' : 'chevron-down'}" style="width:16px;height:16px;"></i>
+                <span>${this.escapeHtml(groupTitle)}</span>
+                ${groupBadge || `<span class="badge badge-navy" style="font-size:11px;">${groupJobs.length}件</span>`}
+              </div>
+              <span style="font-size:11px; font-weight:normal; color:var(--text-secondary);">
+                ${isCollapsed ? 'クリックして展開' : 'クリックして折りたたむ'}
+              </span>
+            </div>
+          </td>
+        </tr>
+      `;
+
+      if (!isCollapsed) {
+        rowsHtml += groupJobs.map(job => this.renderAutoScoutMatrixRow(job, mediaList, weekAutoMap, weekRange, canEdit, isWeekConfirmed, targetJobIds)).join('');
+      }
+    });
+
+    return rowsHtml;
+  }
+
+  renderAutoScoutMatrixRow(job, mediaList, weekAutoMap, weekRange, canEdit, isWeekConfirmed, targetJobIds) {
+    const rankBadgeHtml = this.renderPriorityRankBadge(job.priorityRank, false);
+    const isTarget = targetJobIds.has(job.jobId);
+
+    return `
+      <tr data-job-id="${job.jobId}">
+        <td style="text-align: left; position: sticky; left: 0; background-color: #FFFFFF; z-index: 4;">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <span style="font-weight: 700; color: var(--color-navy-main); font-size: 13px;">${this.escapeHtml(job.companyName)}</span>
+            ${rankBadgeHtml}
+          </div>
+          <div style="font-size: 11.5px; color: var(--text-secondary); margin-top:2px;">${this.escapeHtml(job.jobTitle)}</div>
+        </td>
+        <td style="text-align:center;">
+          <button class="btn-mini btn-toggle-auto-target-inline" data-job-id="${job.jobId}" title="${isTarget ? '自動スカウト対象から外す' : '自動スカウト対象に追加'}" style="font-size:10.5px; padding:2px 6px; border:1px solid ${isTarget ? '#BEE3F8' : '#E2E8F0'}; background:${isTarget ? '#EBF8FF' : '#F7FAFC'};">
+            ${isTarget ? '<span style="color:#2B6CB0; font-weight:700;">★ 対象</span>' : '<span style="color:#A0AEC0;">☆ 対象外</span>'}
+          </button>
+        </td>
+        <td>
+          <span class="badge ${job.status === 'スカウト実施中' ? 'badge-success' : job.status === '準備中' ? 'badge-gold' : 'badge-gray'}">${job.status}</span>
+        </td>
+        ${mediaList.map(m => {
+          const recKey = `${job.jobId}_${m.id}`;
+          const rec = weekAutoMap.get(recKey) || { sentCount: 0, totalReplyCount: 0, effectiveReplyCount: 0 };
+          return `
+            <td>
+              <div class="media-subcell-container" data-job-id="${job.jobId}" data-media-id="${m.id}">
+                <div class="subcell-row">
+                  <span class="subcell-label" style="color:#2B6CB0; font-weight:700;">自動送信</span>
+                  <input type="number" min="0" class="subcell-input input-auto-sent" value="${rec.sentCount}" ${!canEdit ? 'disabled' : ''}>
+                  ${canEdit ? `
+                    <div class="subcell-btns">
+                      <button class="btn-mini btn-auto-step-sent" data-step="1">+1</button>
+                      <button class="btn-mini btn-auto-step-sent" data-step="5">+5</button>
+                      <button class="btn-mini btn-auto-step-sent" data-step="10">+10</button>
+                      <button class="btn-mini btn-auto-step-sent" data-step="-1">-1</button>
+                    </div>
+                  ` : ''}
+                </div>
+                <div class="subcell-row">
+                  <span class="subcell-label">自動総返信</span>
+                  <input type="number" min="0" class="subcell-input input-auto-total-reply" value="${rec.totalReplyCount}" ${!canEdit ? 'disabled' : ''}>
+                  ${canEdit ? `
+                    <div class="subcell-btns">
+                      <button class="btn-mini btn-auto-add-total-reply">+1</button>
+                    </div>
+                  ` : ''}
+                </div>
+                <div class="subcell-row">
+                  <span class="subcell-label" style="color:var(--color-navy-main); font-weight:700;">自動有効返信</span>
+                  <input type="number" min="0" class="subcell-input input-auto-effective-reply" value="${rec.effectiveReplyCount}" ${!canEdit ? 'disabled' : ''}>
+                  ${canEdit ? `
+                    <div class="subcell-btns">
+                      <button class="btn-mini btn-auto-add-effective-reply" style="background:var(--color-gold-light); border-color:var(--color-gold-accent);">+1</button>
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+            </td>
+          `;
+        }).join('')}
+      </tr>
+    `;
+  }
+
+  bindAutoScoutEvents(container, weekRange, isWeekConfirmed) {
+    container.querySelector('#btn-auto-prev-week')?.addEventListener('click', () => {
+      const d = new Date(weekRange.weekStartDate);
+      d.setDate(d.getDate() - 7);
+      this.autoScoutWeekDateStr = StorageService.getWeekRange(d).weekStartDate;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-auto-next-week')?.addEventListener('click', () => {
+      const d = new Date(weekRange.weekStartDate);
+      d.setDate(d.getDate() + 7);
+      this.autoScoutWeekDateStr = StorageService.getWeekRange(d).weekStartDate;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-auto-this-week')?.addEventListener('click', () => {
+      this.autoScoutWeekDateStr = StorageService.getWeekRange(new Date()).weekStartDate;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-toggle-auto-week-confirm')?.addEventListener('click', () => {
+      const canEdit = StorageService.canEditAutoScout(this.currentStaff ? this.currentStaff.staffId : '', this.isAdminMode);
+      if (!canEdit) return;
+      try {
+        const nextState = isWeekConfirmed ? 'draft' : 'confirmed';
+        StorageService.toggleAutoScoutWeekConfirmation(weekRange.weekStartDate, nextState, this.currentStaff ? this.currentStaff.staffId : '');
+        this.renderCurrentView();
+      } catch (err) {
+        alert(`確定状態変更エラー: ${err.message}`);
+      }
+    });
+
+    container.querySelector('#btn-open-auto-targets-modal')?.addEventListener('click', () => {
+      this.openAutoTargetJobsModal();
+    });
+
+    container.querySelectorAll('.btn-auto-scope-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.autoScoutScopeFilter = btn.getAttribute('data-scope');
+        this.renderCurrentView();
+      });
+    });
+
+    container.querySelectorAll('.btn-auto-group-mode').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.autoScoutGroupMode = btn.getAttribute('data-group-mode');
+        this.renderCurrentView();
+      });
+    });
+
+    container.querySelector('#btn-toggle-all-auto-groups')?.addEventListener('click', () => {
+      if (this.autoScoutCollapsedGroups.size > 0) {
+        this.autoScoutCollapsedGroups.clear();
+      } else {
+        container.querySelectorAll('.auto-group-header-row').forEach(row => {
+          const key = row.getAttribute('data-group-key');
+          if (key) this.autoScoutCollapsedGroups.add(key);
+        });
+      }
+      this.renderCurrentView();
+    });
+
+    container.querySelectorAll('.auto-group-header-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const key = row.getAttribute('data-group-key');
+        if (key) {
+          if (this.autoScoutCollapsedGroups.has(key)) {
+            this.autoScoutCollapsedGroups.delete(key);
+          } else {
+            this.autoScoutCollapsedGroups.add(key);
+          }
+          this.renderCurrentView();
+        }
+      });
+    });
+
+    container.querySelectorAll('.btn-toggle-auto-target-inline').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const jobId = btn.getAttribute('data-job-id');
+        StorageService.toggleAutoScoutTargetJob(jobId, this.currentStaff ? this.currentStaff.staffId : '');
+        this.renderCurrentView();
+      });
+    });
+
+    const searchInp = container.querySelector('#auto-scout-search-input');
+    searchInp?.addEventListener('input', (e) => {
+      this.autoScoutSearchKeyword = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-clear-auto-search')?.addEventListener('click', () => {
+      this.autoScoutSearchKeyword = '';
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#auto-scout-rank-select')?.addEventListener('change', (e) => {
+      this.autoScoutRankFilter = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#auto-scout-status-select')?.addEventListener('change', (e) => {
+      this.autoScoutStatusFilter = e.target.value;
+      this.renderCurrentView();
+    });
+
+    const canEdit = StorageService.canEditAutoScout(this.currentStaff ? this.currentStaff.staffId : '', this.isAdminMode);
+    if (!canEdit) return;
+
+    container.querySelectorAll('.media-subcell-container').forEach(cell => {
+      const jobId = cell.getAttribute('data-job-id');
+      const mediaId = cell.getAttribute('data-media-id');
+      const inputSent = cell.querySelector('.input-auto-sent');
+      const inputTotal = cell.querySelector('.input-auto-total-reply');
+      const inputEffective = cell.querySelector('.input-auto-effective-reply');
+
+      const handleUpdate = () => {
+        if (isWeekConfirmed) {
+          if (!confirm('この週は既に確定済みです。実績を修正しますか？')) {
+            this.renderCurrentView();
+            return;
+          }
+        }
+        const sent = Math.max(0, parseInt(inputSent.value, 10) || 0);
+        const total = Math.max(0, parseInt(inputTotal.value, 10) || 0);
+        const effective = Math.max(0, parseInt(inputEffective.value, 10) || 0);
+        if (effective > total) {
+          alert(`有効返信数(${effective})は総返信数(${total})以下である必要があります。`);
+          return;
+        }
+        const record = {
+          autoResultId: `${jobId}_${weekRange.weekStartDate}_${mediaId}`,
+          jobId,
+          weekStartDate: weekRange.weekStartDate,
+          weekEndDate: weekRange.weekEndDate,
+          mediaId,
+          sentCount: sent,
+          totalReplyCount: total,
+          effectiveReplyCount: effective,
+          status: 'valid',
+          confirmationStatus: 'draft'
+        };
+        this.scheduleAutoSaveAutoScout(record);
+      };
+
+      [inputSent, inputTotal, inputEffective].forEach(inp => {
+        inp?.addEventListener('blur', handleUpdate);
+      });
+
+      cell.querySelectorAll('.btn-auto-step-sent').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const step = parseInt(btn.getAttribute('data-step'), 10);
+          const curr = Math.max(0, parseInt(inputSent.value, 10) || 0);
+          inputSent.value = Math.max(0, curr + step);
+          handleUpdate();
+        });
+      });
+
+      cell.querySelector('.btn-auto-add-total-reply')?.addEventListener('click', () => {
+        const curr = Math.max(0, parseInt(inputTotal.value, 10) || 0);
+        inputTotal.value = curr + 1;
+        handleUpdate();
+      });
+
+      cell.querySelector('.btn-auto-add-effective-reply')?.addEventListener('click', () => {
+        const currTotal = Math.max(0, parseInt(inputTotal.value, 10) || 0);
+        const currEff = Math.max(0, parseInt(inputEffective.value, 10) || 0);
+        inputTotal.value = currTotal + 1;
+        inputEffective.value = currEff + 1;
+        handleUpdate();
+      });
+    });
+  }
+
+  scheduleAutoSaveAutoScout(record) {
+    this.showSaveStatus('saving');
+    try {
+      StorageService.saveAutoScoutWeeklyResult(record, this.currentStaff ? this.currentStaff.staffId : '');
+      this.showSaveStatus('saved');
+    } catch (err) {
+      console.error('Auto scout save error:', err);
+      this.showSaveStatus('error', err.message);
+    }
+  }
+
+  openAutoTargetJobsModal() {
+    const allJobs = StorageService.getJobs().filter(j => !j.archived);
+    let targetJobIds = new Set(StorageService.getAutoScoutTargetJobIds());
+    let filterKeyword = '';
+    let filterRank = '';
+
+    const renderContent = () => {
+      let filtered = StorageService.filterAndSortJobs(allJobs, {
+        searchKeyword: filterKeyword,
+        priorityRanks: filterRank ? [filterRank] : [],
+        sortBy: 'company_asc'
+      });
+
+      const bodyHtml = `
+        <div class="modal-overlay" style="z-index:2050;">
+          <div class="modal-card" style="max-width: 760px;">
+            <div class="modal-header">
+              <h3 class="modal-title"><i data-lucide="plus-circle" style="color:var(--color-gold-accent);"></i> 自動スカウト対象求人の追加・管理</h3>
+              <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+              <p style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">
+                自動スカウトを実施している求人にチェックを入れて「設定を保存する」を押してください。<br>
+                対象外の求人は自動スカウト一覧から除外され、大量案件でも管理しやすくなります。
+              </p>
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px; background:#F8F6F2; padding:10px 14px; border-radius:6px; border:1px solid #E6D5B8;">
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                  <div style="position:relative; width:220px;">
+                    <input type="text" id="target-modal-search-inp" class="form-control" placeholder="企業名・求人名で検索" value="${this.escapeHtml(filterKeyword)}" style="padding-left:28px; font-size:12px;">
+                    <i data-lucide="search" style="position:absolute; left:8px; top:50%; transform:translateY(-50%); width:13px; height:13px; color:var(--text-muted);"></i>
+                  </div>
+                  <select id="target-modal-rank-sel" class="form-select" style="width:140px; font-size:12px;">
+                    <option value="">すべてのランク</option>
+                    ${PRIORITY_RANK_LIST.map(r => `<option value="${r}" ${filterRank === r ? 'selected' : ''}>${PRIORITY_RANKS[r].fullLabel}</option>`).join('')}
+                  </select>
+                </div>
+                <div style="display:flex; gap:6px;">
+                  <button id="btn-target-select-all" class="btn btn-secondary btn-sm">表示中を全選択</button>
+                  <button id="btn-target-deselect-all" class="btn btn-secondary btn-sm">全解除</button>
+                </div>
+              </div>
+              <div style="max-height: 380px; overflow-y: auto; border:1px solid var(--border-light); border-radius:4px;">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th style="width:50px; text-align:center;">対象</th>
+                      <th>企業名 / 求人名</th>
+                      <th style="width:110px;">注力ランク</th>
+                      <th style="width:100px;">ステータス</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${filtered.length === 0 ? `
+                      <tr><td colspan="4" style="text-align:center; padding:32px; color:var(--text-muted);">条件に一致する求人がありません</td></tr>
+                    ` : filtered.map(job => {
+                      const isChecked = targetJobIds.has(job.jobId);
+                      const rankHtml = this.renderPriorityRankBadge(job.priorityRank, false);
+                      return `
+                        <tr style="${isChecked ? 'background-color:#FFFDF9;' : ''}">
+                          <td style="text-align:center;">
+                            <input type="checkbox" class="chk-target-job" data-job-id="${job.jobId}" ${isChecked ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;">
+                          </td>
+                          <td>
+                            <strong>${this.escapeHtml(job.companyName)}</strong><br>
+                            <span style="font-size:11.5px; color:var(--text-secondary);">${this.escapeHtml(job.jobTitle)}</span>
+                          </td>
+                          <td>${rankHtml}</td>
+                          <td><span class="badge ${job.status === 'スカウト実施中' ? 'badge-success' : 'badge-gray'}">${job.status}</span></td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; font-size:12.5px;">
+                <span>現在選択中: <strong id="lbl-target-count" style="color:var(--color-gold-hover); font-size:14px;">${targetJobIds.size}</strong> 件 / 全${allJobs.length}件</span>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary modal-cancel">キャンセル</button>
+              <button id="btn-save-target-jobs" class="btn btn-gold"><i data-lucide="check"></i> 対象求人設定を保存する</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const mContainer = document.getElementById('modal-container');
+      mContainer.innerHTML = bodyHtml;
+      if (window.lucide) window.lucide.createIcons();
+
+      const closeModal = () => mContainer.innerHTML = '';
+      mContainer.querySelector('.modal-close').onclick = closeModal;
+      mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+      mContainer.querySelector('#target-modal-search-inp')?.addEventListener('input', (e) => {
+        filterKeyword = e.target.value;
+        renderContent();
+      });
+
+      mContainer.querySelector('#target-modal-rank-sel')?.addEventListener('change', (e) => {
+        filterRank = e.target.value;
+        renderContent();
+      });
+
+      mContainer.querySelectorAll('.chk-target-job').forEach(chk => {
+        chk.addEventListener('change', () => {
+          const jobId = chk.getAttribute('data-job-id');
+          if (chk.checked) targetJobIds.add(jobId);
+          else targetJobIds.delete(jobId);
+          const countEl = mContainer.querySelector('#lbl-target-count');
+          if (countEl) countEl.textContent = targetJobIds.size;
+        });
+      });
+
+      mContainer.querySelector('#btn-target-select-all')?.addEventListener('click', () => {
+        filtered.forEach(j => targetJobIds.add(j.jobId));
+        renderContent();
+      });
+
+      mContainer.querySelector('#btn-target-deselect-all')?.addEventListener('click', () => {
+        targetJobIds.clear();
+        renderContent();
+      });
+
+      mContainer.querySelector('#btn-save-target-jobs')?.addEventListener('click', () => {
+        StorageService.saveAutoScoutTargetJobIds(Array.from(targetJobIds), this.currentStaff ? this.currentStaff.staffId : '');
+        alert(`自動スカウト対象求人を ${targetJobIds.size}件 に保存しました。`);
+        closeModal();
+        this.renderCurrentView();
+      });
+    };
+
+    renderContent();
+  }
+
+  // =========================================================================
+  // 直接エントリー（インバウンド）実績入力・管理画面
+  // =========================================================================
+  renderInboundView(container) {
+    const dateStr = this.inboundDateStr || new Date().toISOString().slice(0, 10);
+    const routes = DEFAULT_INBOUND_ROUTES;
+    const allJobs = StorageService.getJobs().filter(j => !j.archived);
+
+    const allInboundResults = StorageService.getValidInboundResults();
+    const dayInboundMap = new Map();
+    allInboundResults.filter(r => r.date === dateStr).forEach(r => {
+      dayInboundMap.set(`${r.jobId}_${r.routeId}`, r);
+    });
+
+    let displayJobs = StorageService.filterAndSortJobs(allJobs, {
+      searchKeyword: this.inboundSearchKeyword,
+      priorityRanks: this.inboundRankFilter ? [this.inboundRankFilter] : [],
+      statuses: this.inboundStatusFilter ? [this.inboundStatusFilter] : [],
+      sortBy: 'company_asc'
+    });
+
+    container.innerHTML = `
+      <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button id="btn-inbound-prev-day" class="btn btn-secondary btn-sm"><i data-lucide="chevron-left"></i> 前日</button>
+            <input type="date" id="inbound-date-picker" class="form-control" value="${dateStr}" style="width: 150px; font-weight: 700;">
+            <button id="btn-inbound-next-day" class="btn btn-secondary btn-sm">翌日 <i data-lucide="chevron-right"></i></button>
+            <button id="btn-inbound-today" class="btn btn-gold btn-sm">今日へ移動</button>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 13px; font-weight: 700; color: var(--color-navy-main);">
+              <i data-lucide="arrow-down-left" style="color:var(--color-gold-accent);"></i> 掲載求人への直接エントリー記録
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 16px; padding: 14px 20px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">グループ表示:</span>
+            <button class="btn btn-sm btn-inbound-group-mode ${this.inboundGroupMode === 'company' ? 'btn-navy' : 'btn-secondary'}" data-group-mode="company">
+              企業別
+            </button>
+            <button class="btn btn-sm btn-inbound-group-mode ${this.inboundGroupMode === 'rank' ? 'btn-navy' : 'btn-secondary'}" data-group-mode="rank">
+              注力ランク別
+            </button>
+            <button class="btn btn-sm btn-inbound-group-mode ${this.inboundGroupMode === 'flat' ? 'btn-navy' : 'btn-secondary'}" data-group-mode="flat">
+              リスト表示 (フラット)
+            </button>
+            <button id="btn-toggle-all-inbound-groups" class="btn btn-secondary btn-sm" style="margin-left:8px;">
+              全グループ折りたたみ / 展開
+            </button>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div style="position:relative; width:200px;">
+              <input type="text" id="inbound-search-input" class="form-control" placeholder="企業名・求人名で検索" value="${this.escapeHtml(this.inboundSearchKeyword)}" style="padding-left:28px; font-size:12px;">
+              <i data-lucide="search" style="position:absolute; left:8px; top:50%; transform:translateY(-50%); width:13px; height:13px; color:var(--text-muted);"></i>
+            </div>
+
+            <select id="inbound-rank-select" class="form-select" style="width:130px; font-size:12px;">
+              <option value="">すべてのランク</option>
+              ${PRIORITY_RANK_LIST.map(r => `<option value="${r}" ${this.inboundRankFilter === r ? 'selected' : ''}>${PRIORITY_RANKS[r].fullLabel}</option>`).join('')}
+            </select>
+
+            <select id="inbound-status-select" class="form-select" style="width:130px; font-size:12px;">
+              <option value="">すべてのステータス</option>
+              ${JOB_STATUSES.map(st => `<option value="${st}" ${this.inboundStatusFilter === st ? 'selected' : ''}>${st}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header-flex">
+          <h3 class="card-title"><i data-lucide="inbox"></i> 直接エントリー（インバウンド）入力マトリクス (${displayJobs.length}件表示 / 日付: ${dateStr})</h3>
+          <button id="btn-export-inbound-csv" class="btn btn-secondary btn-sm"><i data-lucide="download"></i> インバウンド明細CSV出力</button>
+        </div>
+
+        <div class="matrix-table-container" style="overflow-x: auto;">
+          <table class="matrix-table" style="border-collapse: collapse;">
+            <thead>
+              <tr>
+                <th style="min-width: 240px; text-align: left; position: sticky; left: 0; z-index: 5;">企業名 / 求人名</th>
+                <th style="width: 80px;">ステータス</th>
+                ${routes.map(r => `<th style="min-width: 130px; border-top: 3px solid ${r.color};">${r.name}</th>`).join('')}
+                <th style="min-width: 140px; background-color: #FAF6ED; color: #9B6D16; border-top: 3px solid #C5A059;">求人合計</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${displayJobs.length === 0 ? `
+                <tr>
+                  <td colspan="${routes.length + 3}" style="padding: 32px; text-align: center; color: var(--text-muted); font-weight: 600;">
+                    条件に一致する求人がありません
+                  </td>
+                </tr>
+              ` : this.renderInboundGroupedRows(displayJobs, routes, dayInboundMap, dateStr)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    this.bindInboundEvents(container, dateStr);
+  }
+
+  renderInboundGroupedRows(jobs, routes, dayInboundMap, dateStr) {
+    if (this.inboundGroupMode === 'flat') {
+      return jobs.map(job => this.renderInboundMatrixRow(job, routes, dayInboundMap, dateStr)).join('');
+    }
+
+    const groups = new Map();
+    if (this.inboundGroupMode === 'company') {
+      jobs.forEach(j => {
+        const key = j.companyName || 'その他企業';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(j);
+      });
+    } else if (this.inboundGroupMode === 'rank') {
+      PRIORITY_RANK_LIST.forEach(r => groups.set(r, []));
+      jobs.forEach(j => {
+        const key = j.priorityRank || 'UNSET';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(j);
+      });
+    }
+
+    let rowsHtml = '';
+    const colSpan = routes.length + 3;
+
+    groups.forEach((groupJobs, groupKey) => {
+      if (groupJobs.length === 0) return;
+
+      const isCollapsed = this.inboundCollapsedGroups.has(groupKey);
+      let groupTitle = groupKey;
+      let groupBadge = '';
+
+      if (this.inboundGroupMode === 'company') {
+        groupTitle = `企業: ${groupKey}`;
+      } else if (this.inboundGroupMode === 'rank') {
+        const rankObj = PRIORITY_RANKS[groupKey] || PRIORITY_RANKS.UNSET;
+        groupTitle = `注力ランク: ${rankObj.fullLabel}`;
+        groupBadge = `<span class="badge" style="background:${rankObj.color}; color:${rankObj.textColor || '#FFF'}; font-size:11px; margin-left:8px;">${groupJobs.length}件</span>`;
+      }
+
+      rowsHtml += `
+        <tr class="inbound-group-header-row" data-group-key="${this.escapeHtml(groupKey)}" style="background-color: #F0F4F8; cursor: pointer; border-top: 2px solid #CBD5E0;">
+          <td colspan="${colSpan}" style="padding: 10px 16px; font-weight: 700; color: #1B2A4A; text-align: left;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <i data-lucide="${isCollapsed ? 'chevron-right' : 'chevron-down'}" style="width:16px;height:16px;"></i>
+                <span>${this.escapeHtml(groupTitle)}</span>
+                ${groupBadge || `<span class="badge badge-navy" style="font-size:11px;">${groupJobs.length}件</span>`}
+              </div>
+              <span style="font-size:11px; font-weight:normal; color:var(--text-secondary);">
+                ${isCollapsed ? 'クリックして展開' : 'クリックして折りたたむ'}
+              </span>
+            </div>
+          </td>
+        </tr>
+      `;
+
+      if (!isCollapsed) {
+        rowsHtml += groupJobs.map(job => this.renderInboundMatrixRow(job, routes, dayInboundMap, dateStr)).join('');
+      }
+    });
+
+    return rowsHtml;
+  }
+
+  renderInboundMatrixRow(job, routes, dayInboundMap, dateStr) {
+    const rankBadgeHtml = this.renderPriorityRankBadge(job.priorityRank, false);
+    let totalJobEntry = 0;
+    let totalJobEffective = 0;
+
+    const cellColumns = routes.map(r => {
+      const recKey = `${job.jobId}_${r.id}`;
+      const rec = dayInboundMap.get(recKey) || { entryCount: 0, effectiveCount: 0 };
+      totalJobEntry += Number(rec.entryCount || 0);
+      totalJobEffective += Number(rec.effectiveCount || 0);
+
+      return `
+        <td>
+          <div class="inbound-subcell-container" data-job-id="${job.jobId}" data-route-id="${r.id}">
+            <div class="subcell-row">
+              <span class="subcell-label" style="color:#1B2A4A; font-weight:700;">エントリー</span>
+              <input type="number" min="0" class="subcell-input input-inbound-entry" value="${rec.entryCount}">
+              <div class="subcell-btns">
+                <button class="btn-mini btn-inbound-step-entry" data-step="1">+1</button>
+              </div>
+            </div>
+            <div class="subcell-row">
+              <span class="subcell-label" style="color:var(--color-gold-hover); font-weight:700;">有効</span>
+              <input type="number" min="0" class="subcell-input input-inbound-effective" value="${rec.effectiveCount}">
+              <div class="subcell-btns">
+                <button class="btn-mini btn-inbound-step-effective" style="background:var(--color-gold-light); border-color:var(--color-gold-accent);">+1</button>
+              </div>
+            </div>
+          </div>
+        </td>
+      `;
+    }).join('');
+
+    const totalRate = totalJobEntry > 0 ? ((totalJobEffective / totalJobEntry) * 100).toFixed(1) + '%' : '－';
+
+    return `
+      <tr data-job-id="${job.jobId}">
+        <td style="text-align: left; position: sticky; left: 0; background-color: #FFFFFF; z-index: 4;">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <span style="font-weight: 700; color: var(--color-navy-main); font-size: 13px;">${this.escapeHtml(job.companyName)}</span>
+            ${rankBadgeHtml}
+          </div>
+          <div style="font-size: 11.5px; color: var(--text-secondary); margin-top:2px;">${this.escapeHtml(job.jobTitle)}</div>
+        </td>
+        <td>
+          <span class="badge ${job.status === 'スカウト実施中' ? 'badge-success' : job.status === '準備中' ? 'badge-gold' : 'badge-gray'}">${job.status}</span>
+        </td>
+        ${cellColumns}
+        <td style="background-color:#FAF6ED; text-align:center;">
+          <div style="font-size:12px; font-weight:700; color:#1B2A4A;">エントリー: ${totalJobEntry}件</div>
+          <div style="font-size:12px; font-weight:700; color:#C5A059; margin-top:2px;">有効: ${totalJobEffective}件</div>
+          <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">有効率: ${totalRate}</div>
+        </td>
+      </tr>
+    `;
+  }
+
+  bindInboundEvents(container, dateStr) {
+    container.querySelector('#btn-inbound-prev-day')?.addEventListener('click', () => {
+      const d = new Date(dateStr + 'T00:00:00+09:00');
+      d.setDate(d.getDate() - 1);
+      this.inboundDateStr = d.toISOString().slice(0, 10);
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-inbound-next-day')?.addEventListener('click', () => {
+      const d = new Date(dateStr + 'T00:00:00+09:00');
+      d.setDate(d.getDate() + 1);
+      this.inboundDateStr = d.toISOString().slice(0, 10);
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-inbound-today')?.addEventListener('click', () => {
+      this.inboundDateStr = new Date().toISOString().slice(0, 10);
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#inbound-date-picker')?.addEventListener('change', (e) => {
+      if (e.target.value) {
+        this.inboundDateStr = e.target.value;
+        this.renderCurrentView();
+      }
+    });
+
+    container.querySelectorAll('.btn-inbound-group-mode').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.inboundGroupMode = btn.getAttribute('data-group-mode');
+        this.renderCurrentView();
+      });
+    });
+
+    container.querySelector('#btn-toggle-all-inbound-groups')?.addEventListener('click', () => {
+      if (this.inboundCollapsedGroups.size > 0) {
+        this.inboundCollapsedGroups.clear();
+      } else {
+        container.querySelectorAll('.inbound-group-header-row').forEach(row => {
+          const key = row.getAttribute('data-group-key');
+          if (key) this.inboundCollapsedGroups.add(key);
+        });
+      }
+      this.renderCurrentView();
+    });
+
+    container.querySelectorAll('.inbound-group-header-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const key = row.getAttribute('data-group-key');
+        if (key) {
+          if (this.inboundCollapsedGroups.has(key)) {
+            this.inboundCollapsedGroups.delete(key);
+          } else {
+            this.inboundCollapsedGroups.add(key);
+          }
+          this.renderCurrentView();
+        }
+      });
+    });
+
+    const searchInp = container.querySelector('#inbound-search-input');
+    searchInp?.addEventListener('input', (e) => {
+      this.inboundSearchKeyword = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#inbound-rank-select')?.addEventListener('change', (e) => {
+      this.inboundRankFilter = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#inbound-status-select')?.addEventListener('change', (e) => {
+      this.inboundStatusFilter = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-export-inbound-csv')?.addEventListener('click', () => {
+      StorageService.exportCSV('inbound_detail');
+    });
+
+    container.querySelectorAll('.inbound-subcell-container').forEach(cell => {
+      const jobId = cell.getAttribute('data-job-id');
+      const routeId = cell.getAttribute('data-route-id');
+
+      const inputEntry = cell.querySelector('.input-inbound-entry');
+      const inputEffective = cell.querySelector('.input-inbound-effective');
+
+      const handleUpdate = () => {
+        const entry = Math.max(0, parseInt(inputEntry.value, 10) || 0);
+        const effective = Math.max(0, parseInt(inputEffective.value, 10) || 0);
+
+        if (effective > entry) {
+          alert(`有効エントリー数(${effective})はエントリー数(${entry})以下である必要があります。`);
+          return;
+        }
+
+        const record = {
+          jobId,
+          date: dateStr,
+          routeId,
+          entryCount: entry,
+          effectiveCount: effective,
+          status: 'valid'
+        };
+
+        this.scheduleAutoSaveInbound(record);
+      };
+
+      [inputEntry, inputEffective].forEach(inp => {
+        inp?.addEventListener('blur', handleUpdate);
+      });
+
+      cell.querySelector('.btn-inbound-step-entry')?.addEventListener('click', () => {
+        const curr = Math.max(0, parseInt(inputEntry.value, 10) || 0);
+        inputEntry.value = curr + 1;
+        handleUpdate();
+      });
+
+      cell.querySelector('.btn-inbound-step-effective')?.addEventListener('click', () => {
+        const currEntry = Math.max(0, parseInt(inputEntry.value, 10) || 0);
+        const currEff = Math.max(0, parseInt(inputEffective.value, 10) || 0);
+        inputEntry.value = Math.max(currEntry, currEff + 1);
+        inputEffective.value = currEff + 1;
+        handleUpdate();
+      });
+    });
+  }
+
+  scheduleAutoSaveInbound(record) {
+    this.showSaveStatus('saving');
+    try {
+      StorageService.saveInboundResult(record, this.currentStaff ? this.currentStaff.staffId : '');
+      this.showSaveStatus('saved');
+    } catch (err) {
+      console.error('Inbound save error:', err);
+      this.showSaveStatus('error', err.message);
+    }
+  }
+
+  scheduleAutoSaveAutoScout(record) {
+    this.showSaveStatus('saving');
+    try {
+      StorageService.saveAutoScoutWeeklyResult(record, this.currentStaff ? this.currentStaff.staffId : '');
+      this.showSaveStatus('saved');
+    } catch (err) {
+      console.error('Auto scout save error:', err);
+      this.showSaveStatus('error', err.message);
+    }
+  }
+
+  // =========================================================================
+  // 3. 求人マスタ画面 (Jobs - 企業単位の注力ランク・並び替え・絞り込み・検索)
+  // =========================================================================
+  renderJobsView(container) {
+    const allJobs = StorageService.getJobs();
+    const filteredJobs = StorageService.filterAndSortJobs(allJobs, {
+      searchKeyword: this.jobsMasterSearchKeyword,
+      industries: this.jobsMasterFilters.industries,
+      positions: this.jobsMasterFilters.positions,
+      statuses: this.jobsMasterFilters.statuses,
+      targetAges: this.jobsMasterFilters.targetAges,
+      roles: this.jobsMasterFilters.roles,
+      salaryRanges: this.jobsMasterFilters.salaryRanges,
+      priorityRanks: this.jobsMasterFilters.priorityRanks,
+      archived: false,
+      sortBy: this.jobsMasterSortBy
+    });
+
+    const activeFilterCount =
+      this.jobsMasterFilters.industries.length +
+      this.jobsMasterFilters.positions.length +
+      this.jobsMasterFilters.statuses.length +
+      this.jobsMasterFilters.targetAges.length +
+      this.jobsMasterFilters.roles.length +
+      this.jobsMasterFilters.salaryRanges.length +
+      this.jobsMasterFilters.priorityRanks.length;
+
+    container.innerHTML = `
+      ${this.isAdminMode ? `
+        <div class="card" style="margin-bottom: 16px; background-color: var(--color-gold-light); border-color: var(--color-gold-border);">
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+            <div>
+              <strong style="color:var(--color-navy-main);"><i data-lucide="shield"></i> 管理者メニュー</strong>
+              <p style="font-size:12px; color:var(--text-secondary); margin-top:2px;">担当者管理・注力ランクの変更・CSV出力・JSONバックアップ/復元・リセットが実行可能です。</p>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button id="btn-admin-manage-staff" class="btn btn-gold btn-sm"><i data-lucide="users"></i> 担当者管理</button>
+              <button id="btn-admin-data-manage" class="btn btn-navy btn-sm"><i data-lucide="database"></i> データ管理画面を開く</button>
+            </div>
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="notice-box" style="margin-bottom: 16px; background-color:#F8F6F2; border-color:#E6D5B8; color:#1B2A4A;">
+        <i data-lucide="info"></i>
+        <span>注力ランクは、企業の優劣ではなく、社内でのスカウト活動の優先度を表す項目です。</span>
+      </div>
+
+      <div class="card" style="margin-bottom: 16px; padding: 14px 20px;">
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+            <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:240px;">
+              <div style="position:relative; width:100%; max-width:320px;">
+                <input type="text" id="jobs-master-search-input" class="form-control" placeholder="企業名・求人名で検索" value="${this.escapeHtml(this.jobsMasterSearchKeyword)}" style="padding-left:32px;">
+                <i data-lucide="search" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-muted);"></i>
+              </div>
+              <button id="btn-toggle-jobs-filter" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:4px;">
+                <i data-lucide="filter" style="width:14px;height:14px;"></i> 絞り込み
+                ${activeFilterCount > 0 ? `<span class="badge badge-gold" style="padding:1px 5px;">${activeFilterCount}</span>` : ''}
+              </button>
+              ${this.jobsMasterSearchKeyword || activeFilterCount > 0 ? `
+                <button id="btn-clear-jobs-search" class="btn btn-secondary btn-sm">クリア</button>
+              ` : ''}
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">並び替え:</span>
+              <select id="jobs-master-sort-select" class="form-select" style="width:190px; font-size:12px;">
+                <option value="company_asc" ${this.jobsMasterSortBy === 'company_asc' ? 'selected' : ''}>企業名順：昇順</option>
+                <option value="company_desc" ${this.jobsMasterSortBy === 'company_desc' ? 'selected' : ''}>企業名順：降順</option>
+                <option value="job_title_asc" ${this.jobsMasterSortBy === 'job_title_asc' ? 'selected' : ''}>求人名順：昇順</option>
+                <option value="job_title_desc" ${this.jobsMasterSortBy === 'job_title_desc' ? 'selected' : ''}>求人名順：降順</option>
+                <option value="rank_desc" ${this.jobsMasterSortBy === 'rank_desc' ? 'selected' : ''}>注力ランク順：高い順</option>
+                <option value="rank_asc" ${this.jobsMasterSortBy === 'rank_asc' ? 'selected' : ''}>注力ランク順：低い順</option>
+                <option value="status" ${this.jobsMasterSortBy === 'status' ? 'selected' : ''}>ステータス順</option>
+                <option value="updated_desc" ${this.jobsMasterSortBy === 'updated_desc' ? 'selected' : ''}>更新日が新しい順</option>
+                <option value="updated_asc" ${this.jobsMasterSortBy === 'updated_asc' ? 'selected' : ''}>更新日が古い順</option>
+                <option value="created_desc" ${this.jobsMasterSortBy === 'created_desc' ? 'selected' : ''}>登録日が新しい順</option>
+                <option value="created_asc" ${this.jobsMasterSortBy === 'created_asc' ? 'selected' : ''}>登録日が古い順</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 絞り込みドロワー (アコーディオン) -->
+          <div id="jobs-filter-drawer" style="display:${this.jobsMasterFilterOpen ? 'block' : 'none'}; background:#F8F6F2; border:1px solid #E6D5B8; padding:16px; border-radius:6px; margin-top:8px;">
+            <div style="font-size:13px; font-weight:700; color:var(--color-navy-main); margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+              <span>詳細絞り込み条件 (同項目内OR / 異項目間AND)</span>
+              <span style="font-weight:normal; font-size:11.5px; color:var(--text-secondary);">選択中: ${activeFilterCount}件</span>
+            </div>
+
+            <div class="grid-3" style="gap:12px;">
+              <div class="form-group" style="margin-bottom:8px;">
+                <label class="form-label" style="font-size:11.5px;">業種</label>
+                <div style="max-height:100px; overflow-y:auto; font-size:12px; background:#FFF; border:1px solid #CBD5E0; padding:6px; border-radius:4px;">
+                  ${INDUSTRIES.map(ind => `
+                    <label style="display:block; margin-bottom:2px;"><input type="checkbox" class="chk-filter-industry" value="${ind}" ${this.jobsMasterFilters.industries.includes(ind) ? 'checked' : ''}> ${ind}</label>
+                  `).join('')}
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom:8px;">
+                <label class="form-label" style="font-size:11.5px;">職種</label>
+                <div style="max-height:100px; overflow-y:auto; font-size:12px; background:#FFF; border:1px solid #CBD5E0; padding:6px; border-radius:4px;">
+                  ${POSITIONS.map(pos => `
+                    <label style="display:block; margin-bottom:2px;"><input type="checkbox" class="chk-filter-position" value="${pos}" ${this.jobsMasterFilters.positions.includes(pos) ? 'checked' : ''}> ${pos}</label>
+                  `).join('')}
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom:8px;">
+                <label class="form-label" style="font-size:11.5px;">求人ステータス</label>
+                <div style="font-size:12px; background:#FFF; border:1px solid #CBD5E0; padding:6px; border-radius:4px;">
+                  ${JOB_STATUSES.map(st => `
+                    <label style="display:block; margin-bottom:2px;"><input type="checkbox" class="chk-filter-status" value="${st}" ${this.jobsMasterFilters.statuses.includes(st) ? 'checked' : ''}> ${st}</label>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+
+            <div class="grid-3" style="gap:12px; margin-top:8px;">
+              <div class="form-group" style="margin-bottom:8px;">
+                <label class="form-label" style="font-size:11.5px;">対象年齢</label>
+                <div style="font-size:12px; background:#FFF; border:1px solid #CBD5E0; padding:6px; border-radius:4px;">
+                  ${TARGET_AGES.map(age => `
+                    <label style="display:block; margin-bottom:2px;"><input type="checkbox" class="chk-filter-target-age" value="${age}" ${this.jobsMasterFilters.targetAges.includes(age) ? 'checked' : ''}> ${age}</label>
+                  `).join('')}
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom:8px;">
+                <label class="form-label" style="font-size:11.5px;">注力ランク</label>
+                <div style="font-size:12px; background:#FFF; border:1px solid #CBD5E0; padding:6px; border-radius:4px;">
+                  ${PRIORITY_RANK_LIST.map(r => {
+                    const item = PRIORITY_RANKS[r];
+                    return `<label style="display:block; margin-bottom:2px;"><input type="checkbox" class="chk-filter-priority-rank" value="${r}" ${this.jobsMasterFilters.priorityRanks.includes(r) ? 'checked' : ''}> ${item.fullLabel}</label>`;
+                  }).join('')}
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom:8px;">
+                <label class="form-label" style="font-size:11.5px;">役職</label>
+                <div style="max-height:100px; overflow-y:auto; font-size:12px; background:#FFF; border:1px solid #CBD5E0; padding:6px; border-radius:4px;">
+                  ${EXECUTIVE_ROLES.map(role => `
+                    <label style="display:block; margin-bottom:2px;"><input type="checkbox" class="chk-filter-role" value="${role}" ${this.jobsMasterFilters.roles.includes(role) ? 'checked' : ''}> ${role}</label>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+              <button id="btn-reset-filter-drawer" class="btn btn-secondary btn-sm">条件をクリア</button>
+              <button id="btn-apply-filter-drawer" class="btn btn-gold btn-sm">条件を適用</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header-flex">
+          <h3 class="card-title"><i data-lucide="briefcase"></i> 求人マスタ一覧 (${filteredJobs.length}件 / 全${allJobs.filter(j=>!j.archived).length}件)</h3>
+          ${this.isAdminMode ? `<button id="btn-create-job" class="btn btn-gold"><i data-lucide="plus"></i> 新規求人を登録</button>` : ''}
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="min-width:180px;">企業名</th>
+                <th style="min-width:130px;">注力ランク</th>
+                <th style="min-width:180px;">求人名</th>
+                <th>業種</th>
+                <th>職種</th>
+                <th>ステータス</th>
+                <th>対象年齢</th>
+                <th>役職</th>
+                <th>年収帯</th>
+                <th style="min-width:120px;">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredJobs.length === 0 ? `
+                <tr>
+                  <td colspan="10" style="text-align:center; padding:32px; color:var(--text-muted); font-weight:600;">
+                    <i data-lucide="search-x" style="vertical-align:middle; margin-right:4px;"></i> 条件に一致する求人がありません
+                  </td>
+                </tr>
+              ` : filteredJobs.map(j => {
+                const agesStr = Array.isArray(j.targetAge) && j.targetAge.length > 0 ? j.targetAge.join('、') : '未設定';
+                const roleStr = j.role || '未設定';
+                const salariesStr = Array.isArray(j.salaryRange) && j.salaryRange.length > 0 ? j.salaryRange.join('、') : '未設定';
+                const rankHtml = this.renderPriorityRankBadge(j.priorityRank, this.isAdminMode, j.companyId);
+
+                return `
+                  <tr>
+                    <td>
+                      <strong>${this.escapeHtml(j.companyName)}</strong>
+                      ${j.companyNameKana ? `<br><span style="font-size:10.5px; color:var(--text-muted);">${this.escapeHtml(j.companyNameKana)}</span>` : ''}
+                    </td>
+                    <td>${rankHtml}</td>
+                    <td><strong>${this.escapeHtml(j.jobTitle)}</strong></td>
+                    <td>${j.industry || '未設定'}</td>
+                    <td>${j.position || '未設定'}</td>
+                    <td><span class="badge badge-navy">${j.status}</span></td>
+                    <td><span style="font-size:11.5px; color:var(--text-secondary);">${agesStr}</span></td>
+                    <td><span style="font-size:11.5px; color:var(--text-secondary);">${roleStr}</span></td>
+                    <td><span style="font-size:11.5px; color:var(--text-secondary);">${salariesStr}</span></td>
+                    <td>
+                      <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                        <button class="btn btn-secondary btn-sm btn-add-to-myjob" data-job-id="${j.jobId}">担当追加</button>
+                        ${this.isAdminMode ? `
+                          <button class="btn btn-secondary btn-sm btn-edit-job" data-job-id="${j.jobId}">編集</button>
+                          <button class="btn btn-danger btn-sm btn-delete-job" data-job-id="${j.jobId}">削除</button>
+                        ` : ''}
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    // イベントバインド
+    container.querySelector('#btn-admin-manage-staff')?.addEventListener('click', () => {
+      this.openStaffManagerModal();
+    });
+
+    container.querySelector('#btn-admin-data-manage')?.addEventListener('click', () => {
+      this.switchView('data-management');
+    });
+
+    // 検索・並び替え・絞り込みイベント
+    const searchInp = container.querySelector('#jobs-master-search-input');
+    searchInp?.addEventListener('input', (e) => {
+      this.jobsMasterSearchKeyword = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-clear-jobs-search')?.addEventListener('click', () => {
+      this.jobsMasterSearchKeyword = '';
+      this.jobsMasterFilters = { industries: [], positions: [], statuses: [], targetAges: [], roles: [], salaryRanges: [], priorityRanks: [] };
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-toggle-jobs-filter')?.addEventListener('click', () => {
+      this.jobsMasterFilterOpen = !this.jobsMasterFilterOpen;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#jobs-master-sort-select')?.addEventListener('change', (e) => {
+      this.jobsMasterSortBy = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-apply-filter-drawer')?.addEventListener('click', () => {
+      this.jobsMasterFilters.industries = Array.from(container.querySelectorAll('.chk-filter-industry:checked')).map(el => el.value);
+      this.jobsMasterFilters.positions = Array.from(container.querySelectorAll('.chk-filter-position:checked')).map(el => el.value);
+      this.jobsMasterFilters.statuses = Array.from(container.querySelectorAll('.chk-filter-status:checked')).map(el => el.value);
+      this.jobsMasterFilters.targetAges = Array.from(container.querySelectorAll('.chk-filter-target-age:checked')).map(el => el.value);
+      this.jobsMasterFilters.priorityRanks = Array.from(container.querySelectorAll('.chk-filter-priority-rank:checked')).map(el => el.value);
+      this.jobsMasterFilters.roles = Array.from(container.querySelectorAll('.chk-filter-role:checked')).map(el => el.value);
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-reset-filter-drawer')?.addEventListener('click', () => {
+      this.jobsMasterFilters = { industries: [], positions: [], statuses: [], targetAges: [], roles: [], salaryRanges: [], priorityRanks: [] };
+      this.renderCurrentView();
+    });
+
+    // 管理者モード注力ランク即時変更イベント
+    if (this.isAdminMode) {
+      container.querySelectorAll('.select-company-rank').forEach(sel => {
+        sel.addEventListener('change', (e) => {
+          const companyId = sel.getAttribute('data-company-id');
+          const newRank = e.target.value;
+          const statusEl = container.querySelector(`.rank-save-status[data-company-id="${companyId}"]`);
+
+          if (statusEl) statusEl.textContent = '保存中…';
+
+          try {
+            StorageService.updateCompanyRank(companyId, newRank, this.currentStaff ? this.currentStaff.staffId : '');
+            const nowTime = new Date().toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
+            if (statusEl) statusEl.textContent = `保存済み ${nowTime}`;
+            setTimeout(() => {
+              this.renderCurrentView();
+            }, 400);
+          } catch (err) {
+            alert(`ランク変更エラー: ${err.message}`);
+            if (statusEl) statusEl.textContent = '保存失敗';
+          }
+        });
+      });
+    }
+
+    container.querySelectorAll('.btn-add-to-myjob').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const jobId = btn.getAttribute('data-job-id');
+        StorageService.addUserJob(this.currentStaff.staffId, jobId);
+        alert('担当求人に追加しました。本日の実績入力画面に表示されます。');
+      });
+    });
+
+    if (this.isAdminMode) {
+      container.querySelector('#btn-create-job')?.addEventListener('click', () => {
+        this.openJobEditModal(null);
+      });
+
+      container.querySelectorAll('.btn-edit-job').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const jobId = btn.getAttribute('data-job-id');
+          this.openJobEditModal(StorageService.getJobById(jobId));
+        });
+      });
+
+      container.querySelectorAll('.btn-delete-job').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const jobId = btn.getAttribute('data-job-id');
+          this.openJobDeleteConfirmModal(jobId);
+        });
+      });
+    }
+  }
+
+  // 求人削除の安全確認 & 削除モーダル
+  openJobDeleteConfirmModal(jobId) {
+    const job = StorageService.getJobById(jobId);
+    if (!job) return;
+
+    const safety = StorageService.checkJobDeletionSafety(jobId);
+
+    if (!safety.canDelete) {
+      alert(safety.message);
+      return;
+    }
+
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 480px;">
+          <div class="modal-header">
+            <h3 class="modal-title" style="color:var(--color-danger);"><i data-lucide="alert-triangle"></i> 求人を削除しますか？</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body" style="font-size:13px; line-height:1.6;">
+            <div style="background:#FFF5F5; border:1px solid #FEB2B2; padding:12px; border-radius:4px; margin-bottom:16px; color:#C53030;">
+              <strong>注意：削除した求人は元に戻せません。</strong>
+            </div>
+
+            <div style="margin-bottom:12px;">
+              <p><strong>企業名:</strong> ${this.escapeHtml(job.companyName)}</p>
+              <p><strong>求人名:</strong> ${this.escapeHtml(job.jobTitle)}</p>
+              <p><strong>求人ID:</strong> <code style="font-size:11px;">${job.jobId}</code></p>
+            </div>
+
+            ${safety.userJobsCount > 0 ? `
+              <p style="font-size:12px; color:var(--text-secondary);">※この求人に紐づく担当設定 (${safety.userJobsCount}件) も同時に解除されます。</p>
+            ` : ''}
+
+            <div class="form-group" style="margin-top:16px;">
+              <label class="form-label">削除理由 (任意)</label>
+              <input type="text" id="job-delete-reason" class="form-control" placeholder="例: 誤登録のため">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">キャンセル</button>
+            <button id="btn-confirm-delete-job" class="btn btn-danger">求人を削除する</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    mContainer.querySelector('#btn-confirm-delete-job').onclick = () => {
+      const reason = mContainer.querySelector('#job-delete-reason').value.trim();
+      try {
+        StorageService.deleteJob(jobId, this.currentStaff ? this.currentStaff.staffId : '', reason);
+        alert('求人を削除しました');
+        closeModal();
+        this.renderCurrentView();
+      } catch (err) {
+        alert(`削除エラー: ${err.message}`);
+      }
+    };
+  }
+
+  // =========================================================================
+  // 4. 分析画面
+  // =========================================================================
+  renderAnalysisView(container) {
+    container.innerHTML = `
+      <div class="tab-bar">
+        <div class="tab-item ${this.activeAnalysisTab === 'attribute' ? 'active' : ''}" data-analysis-tab="attribute">属性検索・分析</div>
+        <div class="tab-item ${this.activeAnalysisTab === 'similar' ? 'active' : ''}" data-analysis-tab="similar">類似求人検索</div>
+        <div class="tab-item ${this.activeAnalysisTab === 'compare' ? 'active' : ''}" data-analysis-tab="compare">求人比較 (2~5件)</div>
+      </div>
+
+      <div id="analysis-tab-content"></div>
+    `;
+
+    container.querySelectorAll('[data-analysis-tab]').forEach(tab => {
+      tab.addEventListener('click', () => {
+        this.activeAnalysisTab = tab.getAttribute('data-analysis-tab');
+        this.renderCurrentView();
+      });
+    });
+
+    const content = container.querySelector('#analysis-tab-content');
+    if (content) {
+      if (this.activeAnalysisTab === 'attribute') {
+        this.renderAttributeAnalysis(content);
+      } else if (this.activeAnalysisTab === 'similar') {
+        this.renderSimilarJobs(content);
+      } else if (this.activeAnalysisTab === 'compare') {
+        this.renderJobComparison(content);
+      }
+    }
+  }
+
+  renderAttributeAnalysis(container) {
+    container.innerHTML = `
+      <div class="card">
+        <h4 class="card-title"><i data-lucide="filter"></i> 求人属性による絞り込み分析 (同カテゴリ内OR / 異カテゴリ間AND)</h4>
+        <div class="grid-3" style="margin-top: 16px;">
+          <div class="form-group">
+            <label class="form-label">業種</label>
+            <select id="attr-industry" class="form-select">
+              <option value="">すべて</option>
+              ${INDUSTRIES.map(i => `<option value="${i}">${i}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">職種</label>
+            <select id="attr-position" class="form-select">
+              <option value="">すべて</option>
+              ${POSITIONS.map(p => `<option value="${p}">${p}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">求人ステータス</label>
+            <select id="attr-status" class="form-select">
+              <option value="">すべて</option>
+              ${JOB_STATUSES.map(s => `<option value="${s}">${s}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="form-group">
+            <label class="form-label">対象年齢 (複数選択可)</label>
+            <div style="display:flex; flex-direction:column; gap:4px; font-size:12px;">
+              ${TARGET_AGES.map(a => `<label><input type="checkbox" class="chk-attr-age" value="${a}"> ${a}</label>`).join('')}
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">役職</label>
+            <select id="attr-role" class="form-select">
+              <option value="">すべて</option>
+              ${EXECUTIVE_ROLES.map(r => `<option value="${r}">${r}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">年収帯 (複数選択可)</label>
+            <div style="display:flex; flex-direction:column; gap:4px; font-size:12px;">
+              ${SALARY_RANGES.map(s => `<label><input type="checkbox" class="chk-attr-salary" value="${s}"> ${s}</label>`).join('')}
+            </div>
+          </div>
+        </div>
+
+        <button id="btn-run-attr-analysis" class="btn btn-gold" style="margin-top:12px;"><i data-lucide="search"></i> 分析実行</button>
+      </div>
+
+      <div id="attr-analysis-result"></div>
+    `;
+
+    container.querySelector('#btn-run-attr-analysis')?.addEventListener('click', () => {
+      const ind = container.querySelector('#attr-industry').value;
+      const pos = container.querySelector('#attr-position').value;
+      const st = container.querySelector('#attr-status').value;
+      const role = container.querySelector('#attr-role').value;
+      const ages = Array.from(container.querySelectorAll('.chk-attr-age:checked')).map(el => el.value);
+      const salaries = Array.from(container.querySelectorAll('.chk-attr-salary:checked')).map(el => el.value);
+
+      const res = AnalyticsService.searchByAttributes({
+        industries: ind ? [ind] : [],
+        positions: pos ? [pos] : [],
+        statuses: st ? [st] : [],
+        roles: role ? [role] : [],
+        targetAges: ages,
+        salaryRanges: salaries
+      });
+
+      const resContainer = container.querySelector('#attr-analysis-result');
+      resContainer.innerHTML = `
+        <div class="card">
+          <h4 class="card-title">分析結果 (対象求人: ${res.targetJobCount}件)</h4>
+          <div class="kpi-grid" style="margin-top:16px;">
+            <div class="kpi-card"><div class="kpi-label">送信数</div><div class="kpi-value">${res.metrics.sentCount}件</div></div>
+            <div class="kpi-card"><div class="kpi-label">有効返信</div><div class="kpi-value">${res.metrics.effectiveReplyCount}件</div></div>
+            <div class="kpi-card"><div class="kpi-label">参考有効返信率</div><div class="kpi-value">${res.metrics.effectiveReplyRateFormatted}</div></div>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  renderSimilarJobs(container) {
+    const jobs = StorageService.getActiveJobs();
+
+    container.innerHTML = `
+      <div class="card">
+        <h4 class="card-title"><i data-lucide="copy"></i> 類似求人判定</h4>
+        <div class="form-group" style="max-width: 400px; margin-top:16px;">
+          <label class="form-label">基準となる求人を選択</label>
+          <select id="similar-base-job" class="form-select">
+            <option value="">求人を選択してください</option>
+            ${jobs.map(j => `<option value="${j.jobId}">${j.companyName} / ${j.jobTitle}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div id="similar-jobs-result"></div>
+    `;
+
+    container.querySelector('#similar-base-job')?.addEventListener('change', (e) => {
+      const jobId = e.target.value;
+      if (!jobId) return;
+
+      const results = AnalyticsService.findSimilarJobs(jobId);
+      const resContainer = container.querySelector('#similar-jobs-result');
+      resContainer.innerHTML = `
+        <div class="card">
+          <h4 class="card-title">類似度の高い求人 (全${results.length}件)</h4>
+          <table class="data-table" style="margin-top:16px;">
+            <thead><tr><th>企業名 / 求人名</th><th>一致属性</th><th>送信数</th><th>有効返信</th><th>参考有効返信率</th><th>主な利用媒体</th></tr></thead>
+            <tbody>
+              ${results.map(r => `
+                <tr>
+                  <td><strong>${this.escapeHtml(r.job.companyName)}</strong><br><span style="font-size:11px;color:var(--text-secondary);">${this.escapeHtml(r.job.jobTitle)}</span></td>
+                  <td>${r.matchedAttrs.map(a => `<span class="badge badge-gold" style="margin-right:2px;">${a}</span>`).join('')}</td>
+                  <td>${r.metrics.sentCount}件</td>
+                  <td>${r.metrics.effectiveReplyCount}件</td>
+                  <td>${r.metrics.effectiveReplyRateFormatted}</td>
+                  <td>${r.mainMedia}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    });
+  }
+
+  renderJobComparison(container) {
+    const jobs = StorageService.getActiveJobs();
+
+    container.innerHTML = `
+      <div class="card">
+        <h4 class="card-title"><i data-lucide="git-compare"></i> 求人比較 (2〜5件選択)</h4>
+        <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:16px;">
+          ${jobs.map(j => `
+            <label style="font-size:13px; display:inline-flex; align-items:center; gap:6px; background:#F8F6F2; padding:6px 12px; border-radius:4px;">
+              <input type="checkbox" class="chk-job-compare" value="${j.jobId}">
+              ${this.escapeHtml(j.companyName)} / ${this.escapeHtml(j.jobTitle)}
+            </label>
+          `).join('')}
+        </div>
+        <button id="btn-run-compare" class="btn btn-gold" style="margin-top:16px;"><i data-lucide="bar-chart-2"></i> 比較を実行</button>
+      </div>
+      <div id="job-compare-result"></div>
+    `;
+
+    container.querySelector('#btn-run-compare')?.addEventListener('click', () => {
+      const checkedVals = Array.from(container.querySelectorAll('.chk-job-compare:checked')).map(el => el.value);
+      if (checkedVals.length < 2 || checkedVals.length > 5) {
+        alert('比較する求人は2件から5件を選択してください。');
+        return;
+      }
+
+      const compared = AnalyticsService.compareJobs(checkedVals);
+      const resContainer = container.querySelector('#job-compare-result');
+      resContainer.innerHTML = `
+        <div class="card">
+          <h4 class="card-title">求人比較結果</h4>
+          <table class="data-table" style="margin-top:16px;">
+            <thead>
+              <tr>
+                <th>項目</th>
+                ${compared.map(c => `<th>${this.escapeHtml(c.job.companyName)}<br><span style="font-size:11px;font-weight:normal;">${this.escapeHtml(c.job.jobTitle)}</span></th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>注力ランク</td>${compared.map(c => `<td>${this.renderPriorityRankBadge(c.job.priorityRank, false)}</td>`).join('')}</tr>
+              <tr><td>業種</td>${compared.map(c => `<td>${c.job.industry || '-'}</td>`).join('')}</tr>
+              <tr><td>職種</td>${compared.map(c => `<td>${c.job.position || '-'}</td>`).join('')}</tr>
+              <tr><td>ステータス</td>${compared.map(c => `<td><span class="badge badge-navy">${c.job.status}</span></td>`).join('')}</tr>
+              <tr><td>対象年齢</td>${compared.map(c => `<td>${(c.job.targetAge || []).join('、') || '-'}</td>`).join('')}</tr>
+              <tr><td>役職</td>${compared.map(c => `<td>${c.job.role || '-'}</td>`).join('')}</tr>
+              <tr><td>年収帯</td>${compared.map(c => `<td>${(c.job.salaryRange || []).join('、') || '-'}</td>`).join('')}</tr>
+              <tr><td>送信数</td>${compared.map(c => `<td>${c.metrics.sentCount}件</td>`).join('')}</tr>
+              <tr><td>有効返信数</td>${compared.map(c => `<td><strong style="color:var(--color-gold-accent);">${c.metrics.effectiveReplyCount}件</strong></td>`).join('')}</tr>
+              <tr><td>参考有効返信率</td>${compared.map(c => `<td>${c.metrics.effectiveReplyRateFormatted}</td>`).join('')}</tr>
+              <tr><td>主な利用媒体</td>${compared.map(c => `<td>${c.mainMedia}</td>`).join('')}</tr>
+              <tr><td>ナレッジ件数</td>${compared.map(c => `<td>${c.knowledgeCount}件</td>`).join('')}</tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    });
+  }
+
+  // =========================================================================
+  // 5. 求人振り返り・ナレッジ画面
+  // =========================================================================
+  renderKnowledgeView(container) {
+    const list = StorageService.getKnowledgeList();
+    const jobsMap = new Map(StorageService.getJobs().map(j => [j.jobId, j]));
+    const usersMap = new Map(StorageService.getUsers().map(u => [u.staffId, u.name]));
+
+    container.innerHTML = `
+      <div class="card">
+        <div class="card-header-flex">
+          <h3 class="card-title"><i data-lucide="book-open"></i> 求人振り返り・ナレッジ一覧 (${list.length}件)</h3>
+          <button id="btn-create-knowledge" class="btn btn-gold"><i data-lucide="plus"></i> 新規ナレッジ登録</button>
+        </div>
+
+        <table class="data-table">
+          <thead><tr><th>日時</th><th>求人名</th><th>種別</th><th>タイトル</th><th>記録者</th><th>タグ</th></tr></thead>
+          <tbody>
+            ${list.map(k => {
+              const job = jobsMap.get(k.jobId) || {};
+              return `
+                <tr>
+                  <td>${k.createdAt.slice(0,10)}</td>
+                  <td><strong>${this.escapeHtml(job.companyName || '')}</strong><br><span style="font-size:11px;">${this.escapeHtml(job.jobTitle || '')}</span></td>
+                  <td><span class="badge badge-gold">${k.type || 'その他'}</span></td>
+                  <td><strong>${this.escapeHtml(k.title || '無題')}</strong></td>
+                  <td>${usersMap.get(k.staffId) || k.staffId}</td>
+                  <td>${(k.tags || []).map(t => `<span class="badge badge-navy">${t}</span>`).join(' ')}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    container.querySelector('#btn-create-knowledge')?.addEventListener('click', () => {
+      this.openKnowledgeEditModal();
+    });
+  }
+
+  openKnowledgeEditModal() {
+    const jobs = StorageService.getActiveJobs();
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3 class="modal-title">新規ナレッジ登録</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label">対象求人</label>
+              <select id="knw-job-id" class="form-select">
+                ${jobs.map(j => `<option value="${j.jobId}">${j.companyName} / ${j.jobTitle}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">ナレッジ種別</label>
+              <select id="knw-type" class="form-select">
+                ${KNOWLEDGE_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">タイトル</label>
+              <input type="text" id="knw-title" class="form-control" placeholder="件名・タイトル">
+            </div>
+
+            <div class="form-group"><label class="form-label">事実・起きたこと</label><textarea id="knw-facts" class="form-control" rows="2"></textarea></div>
+            <div class="form-group"><label class="form-label">考えられる原因</label><textarea id="knw-causes" class="form-control" rows="2"></textarea></div>
+            <div class="form-group"><label class="form-label">実施した工夫</label><textarea id="knw-efforts" class="form-control" rows="2"></textarea></div>
+            <div class="form-group"><label class="form-label">結果</label><textarea id="knw-results" class="form-control" rows="2"></textarea></div>
+            <div class="form-group"><label class="form-label">次に試すこと</label><textarea id="knw-next" class="form-control" rows="2"></textarea></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">キャンセル</button>
+            <button id="btn-save-knw" class="btn btn-gold">保存する</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    mContainer.querySelector('#btn-save-knw').onclick = () => {
+      const jobId = mContainer.querySelector('#knw-job-id').value;
+      const type = mContainer.querySelector('#knw-type').value;
+      const title = mContainer.querySelector('#knw-title').value;
+
+      StorageService.saveKnowledge({
+        jobId,
+        type,
+        title,
+        facts: mContainer.querySelector('#knw-facts').value,
+        causes: mContainer.querySelector('#knw-causes').value,
+        efforts: mContainer.querySelector('#knw-efforts').value,
+        results: mContainer.querySelector('#knw-results').value,
+        nextActions: mContainer.querySelector('#knw-next').value
+      }, this.currentStaff.staffId);
+
+      closeModal();
+      this.renderCurrentView();
+    };
+  }
+
+  // =========================================================================
+  // 6. スカウト文面管理画面
+  // =========================================================================
+  renderScoutMessagesView(container) {
+    const messages = StorageService.getMessages();
+    const jobsMap = new Map(StorageService.getJobs().map(j => [j.jobId, j]));
+
+    container.innerHTML = `
+      <div class="notice-box">
+        <i data-lucide="info"></i>
+        <span>返信日基準で集計しているため、文面別の成果は参考値です。</span>
+      </div>
+
+      <div class="card">
+        <div class="card-header-flex">
+          <h3 class="card-title"><i data-lucide="file-text"></i> スカウト文面・バージョン管理 (${messages.length}件)</h3>
+          <button id="btn-create-msg" class="btn btn-gold"><i data-lucide="plus"></i> 新規スカウト文面作成</button>
+        </div>
+
+        <table class="data-table">
+          <thead><tr><th>文面名</th><th>対象求人</th><th>最新バージョン</th><th>ステータス</th><th>操作</th></tr></thead>
+          <tbody>
+            ${messages.map(m => {
+              const job = jobsMap.get(m.jobId);
+              const versions = StorageService.getMessageVersions(m.messageId);
+              return `
+                <tr>
+                  <td><strong>${this.escapeHtml(m.title)}</strong></td>
+                  <td>${job ? `${this.escapeHtml(job.companyName)} / ${this.escapeHtml(job.jobTitle)}` : '共通文面'}</td>
+                  <td><span class="badge badge-gold">Ver.${versions.length}</span></td>
+                  <td><span class="badge badge-navy">${m.status}</span></td>
+                  <td>
+                    <button class="btn btn-secondary btn-sm btn-view-msg-history" data-msg-id="${m.messageId}">バージョン履歴</button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    container.querySelector('#btn-create-msg')?.addEventListener('click', () => {
+      this.openMessageEditModal();
+    });
+
+    container.querySelectorAll('.btn-view-msg-history').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const msgId = btn.getAttribute('data-msg-id');
+        this.openVersionHistoryModal(msgId);
+      });
+    });
+  }
+
+  openMessageEditModal() {
+    const jobs = StorageService.getActiveJobs();
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3 class="modal-title">新規スカウト文面登録 (Ver.1)</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label">文面名</label>
+              <input type="text" id="msg-title" class="form-control" placeholder="例: 法人営業向け 件名訴求Ver">
+            </div>
+            <div class="form-group">
+              <label class="form-label">対象求人 (任意)</label>
+              <select id="msg-job-id" class="form-select">
+                <option value="">共通文面 (指定なし)</option>
+                ${jobs.map(j => `<option value="${j.jobId}">${j.companyName} / ${j.jobTitle}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">件名</label>
+              <input type="text" id="msg-subject" class="form-control" placeholder="スカウト件名">
+            </div>
+            <div class="form-group">
+              <label class="form-label">本文</label>
+              <textarea id="msg-body" class="form-control" rows="6" placeholder="スカウト本文"></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">キャンセル</button>
+            <button id="btn-save-msg" class="btn btn-gold">作成する (Ver.1)</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    mContainer.querySelector('#btn-save-msg').onclick = () => {
+      const title = mContainer.querySelector('#msg-title').value;
+      const jobId = mContainer.querySelector('#msg-job-id').value;
+      const subject = mContainer.querySelector('#msg-subject').value;
+      const body = mContainer.querySelector('#msg-body').value;
+
+      if (!title || !subject || !body) {
+        alert('文面名、件名、本文は必須項目です。');
+        return;
+      }
+
+      StorageService.saveMessageWithVersion({ title, jobId }, { subject, body, changeReason: '初回登録' }, this.currentStaff.staffId);
+      closeModal();
+      this.renderCurrentView();
+    };
+  }
+
+  openVersionHistoryModal(messageId) {
+    const versions = StorageService.getMessageVersions(messageId);
+
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3 class="modal-title">文面バージョン履歴</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <table class="data-table">
+              <thead><tr><th>バージョン</th><th>変更理由</th><th>件名</th><th>作成日時</th></tr></thead>
+              <tbody>
+                ${versions.map(v => `
+                  <tr>
+                    <td><span class="badge badge-gold">Ver.${v.versionNumber}</span></td>
+                    <td>${this.escapeHtml(v.changeReason || '')}</td>
+                    <td>${this.escapeHtml(v.subject)}</td>
+                    <td>${v.createdAt.slice(0,16)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">閉じる</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+  }
+
+  // =========================================================================
+  // 7. データ管理画面 (管理者モード)
+  // =========================================================================
+  renderDataManagementView(container) {
+    if (!this.isAdminMode) {
+      container.innerHTML = `
+        <div class="card" style="padding: 32px; text-align: center;">
+          <h3 style="color:var(--color-danger);">アクセス権限がありません</h3>
+          <p style="color:var(--text-secondary); margin-top:8px;">データ管理機能は管理者モードでのみ利用可能です。ヘッダーの「管理者モード」ボタンから認証を行ってください。</p>
+        </div>
+      `;
+      return;
+    }
+
+    const counts = {
+      users: StorageService.getUsers().length,
+      companies: StorageService.getCompanies().length,
+      jobs: StorageService.getJobs().length,
+      userJobs: StorageService.get(KEYS.USER_JOBS).length,
+      results: StorageService.getScoutResults().length,
+      knowledge: StorageService.getKnowledgeList().length,
+      messages: StorageService.getMessages().length,
+      logs: StorageService.getChangeLogs().length
+    };
+
+    container.innerHTML = `
+      <!-- CSV出力 -->
+      <div class="card" style="margin-bottom: 20px;">
+        <h3 class="card-title"><i data-lucide="download"></i> 1. CSVエクスポート</h3>
+        <p style="font-size:12px; color:var(--text-secondary); margin-top:4px;">すべてのCSVはUTF-8 BOM付きで出力され、日本語版Excelで文字化けせず閲覧できます。</p>
+
+        <h4 style="font-size:13px; font-weight:700; margin-top:16px; color:var(--color-navy-main);">■ 通常利用者・担当者向けエクスポート</h4>
+        <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px; margin-top:8px;">
+          <button class="btn btn-secondary btn-sm btn-export-csv" data-csv-type="user_scout_detail">選択担当者の実績明細 CSV</button>
+          <button class="btn btn-secondary btn-sm btn-export-csv" data-csv-type="user_job_summary">選択担当者の求人別集計 CSV</button>
+          <button class="btn btn-secondary btn-sm btn-export-csv" data-csv-type="user_media_summary">選択担当者の媒体別集計 CSV</button>
+          <button class="btn btn-secondary btn-sm btn-export-csv" data-csv-type="team_summary">チーム全体集計 CSV</button>
+          <button class="btn btn-secondary btn-sm btn-export-csv" data-csv-type="jobs_list">求人情報マスタ CSV</button>
+          <button class="btn btn-secondary btn-sm btn-export-csv" data-csv-type="knowledge_all">共有ナレッジ CSV</button>
+        </div>
+
+        <h4 style="font-size:13px; font-weight:700; margin-top:20px; color:var(--color-gold-hover);">■ 管理者専用 全テーブルエクスポート</h4>
+        <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px; margin-top:8px;">
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="company_master">企業マスタ CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="user_master">担当者マスタ CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="jobs_list">求人マスタ全データ CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="scout_messages_all">スカウト文面マスタ CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="change_logs_all">監査変更履歴 CSV</button>
+        </div>
+      </div>
+
+      <!-- JSONバックアップ -->
+      <div class="card" style="margin-bottom: 20px;">
+        <h3 class="card-title"><i data-lucide="archive"></i> 2. 全データ JSONバックアップ</h3>
+        <p style="font-size:12px; color:var(--text-secondary); margin-top:4px;">全12コレクションのデータとメタデータ (作成日時・件数・バージョン 1.0) を含んだJSONファイルを生成します。</p>
+
+        <div style="background:#F8F6F2; padding:12px 16px; border-radius:4px; margin:16px 0; font-size:12.5px; display:flex; flex-wrap:wrap; gap:16px;">
+          <span>担当者: <strong>${counts.users}</strong> 件</span>
+          <span>企業: <strong>${counts.companies}</strong> 件</span>
+          <span>求人: <strong>${counts.jobs}</strong> 件</span>
+          <span>担当設定: <strong>${counts.userJobs}</strong> 件</span>
+          <span>スカウト実績: <strong>${counts.results}</strong> 件</span>
+          <span>ナレッジ: <strong>${counts.knowledge}</strong> 件</span>
+          <span>スカウト文面: <strong>${counts.messages}</strong> 件</span>
+          <span>変更履歴: <strong>${counts.logs}</strong> 件</span>
+        </div>
+
+        <button id="btn-export-json" class="btn btn-gold"><i data-lucide="download-cloud"></i> 全データをJSONバックアップ</button>
+      </div>
+
+      <!-- JSON復元 -->
+      <div class="card" style="margin-bottom: 20px;">
+        <h3 class="card-title"><i data-lucide="upload-cloud"></i> 3. JSONバックアップからの復元</h3>
+        <p style="font-size:12px; color:var(--text-secondary); margin-top:4px;">出力したJSONバックアップファイルからデータを上書き復元します。</p>
+
+        <div class="form-group" style="margin-top:16px; max-width:500px;">
+          <label class="form-label">バックアップJSONファイルを選択</label>
+          <input type="file" id="json-restore-file" accept=".json" class="form-control">
+        </div>
+
+        <div id="json-restore-preview" style="display:none; background:#F7FAFC; border:1px solid #E2E8F0; padding:16px; border-radius:4px; margin-top:16px;"></div>
+      </div>
+
+      <!-- 全データリセット -->
+      <div class="card" style="border: 2px solid var(--color-danger); background-color: #FFF5F5;">
+        <h3 class="card-title" style="color:var(--color-danger);"><i data-lucide="alert-triangle"></i> 4. 全データリセット (危険な操作)</h3>
+        <p style="font-size:12px; color:#C53030; margin-top:4px;">※注意：業務データが削除されます。リセット実行前に必ずJSONバックアップを取得してください。サンプルデータは自動生成されません。</p>
+
+        <div style="margin-top:16px; background:#FFFFFF; padding:16px; border-radius:4px; border:1px solid #FEB2B2;">
+          <h4 style="font-size:13px; font-weight:700; color:var(--color-navy-main); margin-bottom:10px;">削除・保持するデータの選択</h4>
+          <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:8px; font-size:13px;">
+            <label><input type="checkbox" id="reset-keep-users" checked> 担当者マスタを残す</label>
+            <label><input type="checkbox" id="reset-keep-media" checked> 媒体マスタを残す</label>
+            <label style="color:#C53030;"><input type="checkbox" id="reset-del-jobs" checked disabled> 企業・求人マスタを削除</label>
+            <label style="color:#C53030;"><input type="checkbox" id="reset-del-results" checked disabled> スカウト実績を削除</label>
+            <label style="color:#C53030;"><input type="checkbox" id="reset-del-knowledge" checked disabled> ナレッジを削除</label>
+            <label style="color:#C53030;"><input type="checkbox" id="reset-del-messages" checked disabled> スカウト文面を削除</label>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:12px; margin-top:16px; flex-wrap:wrap;">
+          <button id="btn-pre-reset-backup" class="btn btn-secondary btn-sm"><i data-lucide="shield"></i> リセット前バックアップを取得</button>
+          <button id="btn-open-reset-modal" class="btn btn-danger"><i data-lucide="trash-2"></i> 全データリセット画面を開く</button>
+        </div>
+      </div>
+    `;
+
+    container.querySelectorAll('.btn-export-csv').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const type = btn.getAttribute('data-csv-type');
+        StorageService.exportCSV(type, this.currentStaff ? this.currentStaff.staffId : '');
+      });
+    });
+
+    container.querySelector('#btn-export-json')?.addEventListener('click', () => {
+      StorageService.exportJSONBackup();
+      alert('JSONバックアップを出力しました。');
+    });
+
+    const fileInput = container.querySelector('#json-restore-file');
+    fileInput?.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const jsonStr = event.target.result;
+        const validation = StorageService.validateJSONBackup(jsonStr);
+        const previewEl = container.querySelector('#json-restore-preview');
+        previewEl.style.display = 'block';
+
+        if (!validation.valid) {
+          previewEl.innerHTML = `
+            <div style="color:var(--color-danger); font-weight:700;"><i data-lucide="x-circle"></i> このバックアップは現在のアプリでは復元できません。</div>
+            <p style="font-size:12px; color:var(--text-secondary); margin-top:4px;">${validation.error}</p>
+          `;
+        } else {
+          const meta = validation.metadata;
+          previewEl.innerHTML = `
+            <h4 style="font-weight:700; color:var(--color-navy-main);"><i data-lucide="check-circle" style="color:var(--color-success);"></i> 有効なバックアップファイルが確認されました</h4>
+            <div style="font-size:12px; color:var(--text-secondary); margin-top:6px; line-height:1.6;">
+              <p>作成日時: <strong>${meta.backupCreatedAt}</strong> (バージョン: ${meta.dataFormatVersion})</p>
+              <p>復元予定件数: 担当者 ${meta.counts.users || 0}件, 企業 ${meta.counts.companies || 0}件, 求人 ${meta.counts.jobs || 0}件, 実績 ${meta.counts.scoutResults || 0}件, ナレッジ ${meta.counts.knowledge || 0}件</p>
+            </div>
+            <div style="margin-top:12px; display:flex; gap:10px;">
+              <button id="btn-pre-restore-backup" class="btn btn-secondary btn-sm">復元前バックアップを取得</button>
+              <button id="btn-execute-restore-modal" class="btn btn-gold btn-sm">復元手続きへ進む</button>
+            </div>
+          `;
+
+          previewEl.querySelector('#btn-pre-restore-backup')?.addEventListener('click', () => {
+            StorageService.exportJSONBackup();
+            alert('復元前の安全バックアップを取得しました。');
+          });
+
+          previewEl.querySelector('#btn-execute-restore-modal')?.addEventListener('click', () => {
+            this.openRestoreConfirmModal(jsonStr);
+          });
+        }
+        if (window.lucide) window.lucide.createIcons();
+      };
+      reader.readAsText(file);
+    });
+
+    container.querySelector('#btn-pre-reset-backup')?.addEventListener('click', () => {
+      StorageService.exportJSONBackup();
+      alert('リセット前の安全バックアップを取得しました。');
+    });
+
+    container.querySelector('#btn-open-reset-modal')?.addEventListener('click', () => {
+      const keepUsers = container.querySelector('#reset-keep-users').checked;
+      const keepMedia = container.querySelector('#reset-keep-media').checked;
+      this.openFullResetConfirmModal({ keepUsers, keepMedia });
+    });
+  }
+
+  openRestoreConfirmModal(jsonStr) {
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 480px;">
+          <div class="modal-header">
+            <h3 class="modal-title">JSONバックアップからの復元認証</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label">管理者パスワード (${ADMIN_PASSWORD})</label>
+              <input type="password" id="restore-pass-input" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">確認文字列「${RESTORE_CONFIRM_TEXT}」を正確に入力</label>
+              <input type="text" id="restore-confirm-text-input" class="form-control" placeholder="${RESTORE_CONFIRM_TEXT}">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">キャンセル</button>
+            <button id="btn-submit-json-restore" class="btn btn-gold">復元を実行する</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    mContainer.querySelector('#btn-submit-json-restore').onclick = () => {
+      const pass = mContainer.querySelector('#restore-pass-input').value;
+      const confirmText = mContainer.querySelector('#restore-confirm-text-input').value;
+
+      try {
+        StorageService.restoreFromJSONBackup(jsonStr, pass, confirmText, this.currentStaff ? this.currentStaff.staffId : '');
+        alert('JSONバックアップからの復元が完了しました。');
+        closeModal();
+        this.renderCurrentView();
+      } catch (err) {
+        alert(`復元エラー: ${err.message}`);
+      }
+    };
+  }
+
+  openFullResetConfirmModal(options) {
+    const counts = {
+      users: StorageService.getUsers().length,
+      companies: StorageService.getCompanies().length,
+      jobs: StorageService.getJobs().length,
+      results: StorageService.getScoutResults().length,
+      knowledge: StorageService.getKnowledgeList().length
+    };
+
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 520px; border-top: 4px solid var(--color-danger);">
+          <div class="modal-header">
+            <h3 class="modal-title" style="color:var(--color-danger);"><i data-lucide="alert-triangle"></i> 全データリセットの最終確認</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body" style="font-size:13px; line-height:1.6;">
+            <div style="background:#FFF5F5; border:1px solid #FEB2B2; padding:12px; border-radius:4px; margin-bottom:16px; color:#C53030;">
+              <strong>この操作は元に戻せません。選択した業務データが削除されます。</strong>
+            </div>
+
+            <p style="margin-bottom:8px;">削除予定件数:</p>
+            <ul style="margin-bottom:16px; padding-left:20px; color:var(--text-secondary);">
+              <li>企業・求人データ: 企業${counts.companies}件 / 求人${counts.jobs}件 ➔ 削除</li>
+              <li>スカウト実績: ${counts.results}件 ➔ 削除</li>
+              <li>ナレッジ・文面: ${counts.knowledge}件 ➔ 削除</li>
+              <li>担当者マスタ: ${options.keepUsers ? '保持する (削除しません)' : `${counts.users}件 ➔ 削除`}</li>
+              <li>媒体マスタ: ${options.keepMedia ? '保持する (削除しません)' : '初期値にリセット'}</li>
+            </ul>
+
+            <div class="form-group">
+              <label class="form-label">管理者パスワードを入力 (${ADMIN_PASSWORD})</label>
+              <input type="password" id="reset-pass-input" class="form-control">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">確認文字列「${RESET_CONFIRM_TEXT}」を正確に入力</label>
+              <input type="text" id="reset-confirm-text-input" class="form-control" placeholder="${RESET_CONFIRM_TEXT}">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">キャンセル</button>
+            <button id="btn-submit-full-reset" class="btn btn-danger">全データリセットを実行する</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    mContainer.querySelector('#btn-submit-full-reset').onclick = () => {
+      const pass = mContainer.querySelector('#reset-pass-input').value;
+      const confirmText = mContainer.querySelector('#reset-confirm-text-input').value;
+
+      try {
+        StorageService.resetAllData(pass, confirmText, options, this.currentStaff ? this.currentStaff.staffId : '');
+        alert('全データリセットが完了しました');
+        closeModal();
+        this.renderCurrentView();
+      } catch (err) {
+        alert(`リセットエラー: ${err.message}`);
+      }
+    };
+  }
+
+  openStaffSelectionModal(isForce = false) {
+    const activeUsers = StorageService.getActiveUsers();
+    const html = `
+      <div class="modal-overlay" style="z-index: 2000;">
+        <div class="modal-card" style="max-width: 480px;">
+          <div class="modal-header">
+            <h3 class="modal-title">利用する担当者を選択してください</h3>
+            ${!isForce ? '<button class="modal-close">&times;</button>' : ''}
+          </div>
+          <div class="modal-body">
+            <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">
+              担当者名を選択して操作を開始します。
+            </p>
+            <div class="form-group">
+              <label class="form-label">担当者一覧</label>
+              <select id="modal-staff-select" class="form-select">
+                ${activeUsers.map(u => `<option value="${u.staffId}">${u.name} (${u.adminRole === 'admin' ? '管理者' : '一般メンバー'})</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button id="btn-select-staff-submit" class="btn btn-gold" style="width:100%;">選択して開始する</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+
+    const btnSubmit = mContainer.querySelector('#btn-select-staff-submit');
+    btnSubmit.onclick = () => {
+      const selectedId = mContainer.querySelector('#modal-staff-select').value;
+      const user = StorageService.getUserById(selectedId);
+      if (user && user.status === 'active') {
+        StorageService.setCurrentStaffId(selectedId);
+        this.currentStaff = user;
+        this.updateHeaderStaffDisplay();
+        mContainer.innerHTML = '';
+        this.dailyEntrySearchKeyword = '';
+        this.dailyEntryFilterType = 'all';
+        this.dailyEntrySortBy = 'standard';
+        this.switchView('daily-entry');
+      }
+    };
+  }
+
+  openStaffManagerModal() {
+    const users = StorageService.getUsers();
+
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 780px;">
+          <div class="modal-header">
+            <h3 class="modal-title"><i data-lucide="users"></i> 担当者マスタ管理</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+              <span style="font-size:13px; color:var(--text-secondary);">全担当者一覧 (${users.length}名)</span>
+              <button id="btn-open-create-staff" class="btn btn-gold btn-sm"><i data-lucide="user-plus"></i> 新規担当者を登録</button>
+            </div>
+
+            <div style="max-height: 400px; overflow-y: auto; border:1px solid var(--border-light); border-radius:4px;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>担当者名</th>
+                    <th>利用状態</th>
+                    <th>管理者区分</th>
+                    <th>作成日時</th>
+                    <th>更新日時</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${users.map(u => `
+                    <tr>
+                      <td><strong>${this.escapeHtml(u.name)}</strong></td>
+                      <td>
+                        <span class="badge ${u.status === 'active' ? 'badge-success' : 'badge-danger'}">
+                          ${u.status === 'active' ? '利用中' : '利用停止'}
+                        </span>
+                      </td>
+                      <td>
+                        <span class="badge ${u.adminRole === 'admin' ? 'badge-gold' : 'badge-gray'}">
+                          ${u.adminRole === 'admin' ? '管理者' : '一般メンバー'}
+                        </span>
+                      </td>
+                      <td style="font-size:11px;">${u.createdAt.slice(0,16)}</td>
+                      <td style="font-size:11px;">${u.updatedAt.slice(0,16)}</td>
+                      <td>
+                        <button class="btn btn-secondary btn-sm btn-edit-staff" data-staff-id="${u.staffId}">編集</button>
+                        ${u.status === 'active' ? `
+                          <button class="btn btn-danger btn-sm btn-toggle-staff-status" data-staff-id="${u.staffId}" data-target-status="inactive">利用停止</button>
+                        ` : `
+                          <button class="btn btn-gold btn-sm btn-toggle-staff-status" data-staff-id="${u.staffId}" data-target-status="active">利用再開</button>
+                        `}
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">閉じる</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    mContainer.querySelector('#btn-open-create-staff')?.addEventListener('click', () => {
+      this.openStaffEditModal(null);
+    });
+
+    mContainer.querySelectorAll('.btn-edit-staff').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const staffId = btn.getAttribute('data-staff-id');
+        this.openStaffEditModal(StorageService.getUserById(staffId));
+      });
+    });
+
+    mContainer.querySelectorAll('.btn-toggle-staff-status').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const staffId = btn.getAttribute('data-staff-id');
+        const targetStatus = btn.getAttribute('data-target-status');
+        const staff = StorageService.getUserById(staffId);
+
+        if (!staff) return;
+
+        if (targetStatus === 'inactive') {
+          if (confirm('この担当者を利用停止にしますか？')) {
+            StorageService.toggleUserStatus(staffId, 'inactive', this.currentStaff ? this.currentStaff.staffId : '');
+            this.openStaffManagerModal();
+          }
+        } else {
+          StorageService.toggleUserStatus(staffId, 'active', this.currentStaff ? this.currentStaff.staffId : '');
+          alert(`担当者「${staff.name}」の利用を再開しました。`);
+          this.openStaffManagerModal();
+        }
+      });
+    });
+  }
+
+  openStaffEditModal(staff = null) {
+    const isEdit = Boolean(staff);
+    const html = `
+      <div class="modal-overlay" style="z-index: 2100;">
+        <div class="modal-card" style="max-width: 440px;">
+          <div class="modal-header">
+            <h3 class="modal-title">${isEdit ? '担当者情報の編集' : '新規担当者登録'}</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label">担当者名 <span class="badge badge-danger">必須</span></label>
+              <input type="text" id="staff-modal-name" class="form-control" value="${isEdit ? this.escapeHtml(staff.name) : ''}" placeholder="例: 尾﨑優理">
+            </div>
+            <div class="form-group">
+              <label class="form-label">利用状態</label>
+              <select id="staff-modal-status" class="form-select">
+                <option value="active" ${!isEdit || staff.status === 'active' ? 'selected' : ''}>利用中</option>
+                <option value="inactive" ${isEdit && staff.status === 'inactive' ? 'selected' : ''}>利用停止</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">管理者区分</label>
+              <select id="staff-modal-role" class="form-select">
+                <option value="member" ${!isEdit || staff.adminRole === 'member' ? 'selected' : ''}>一般メンバー</option>
+                <option value="admin" ${isEdit && staff.adminRole === 'admin' ? 'selected' : ''}>管理者</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">キャンセル</button>
+            <button id="btn-save-staff-submit" class="btn btn-gold">保存する</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+
+    const restorePrevModal = () => {
+      this.openStaffManagerModal();
+    };
+
+    mContainer.querySelector('.modal-close').onclick = restorePrevModal;
+    mContainer.querySelector('.modal-cancel').onclick = restorePrevModal;
+
+    mContainer.querySelector('#btn-save-staff-submit').onclick = () => {
+      const name = mContainer.querySelector('#staff-modal-name').value.trim();
+      const status = mContainer.querySelector('#staff-modal-status').value;
+      const adminRole = mContainer.querySelector('#staff-modal-role').value;
+
+      if (!name) {
+        alert('担当者名を入力してください。');
+        return;
+      }
+
+      const users = StorageService.getUsers();
+      const duplicateExists = users.some(u => u.name === name && (!isEdit || u.staffId !== staff.staffId));
+      if (duplicateExists) {
+        if (!confirm('同じ名前の担当者が登録されています。登録を続けますか？')) {
+          return;
+        }
+      }
+
+      StorageService.saveUser({
+        staffId: isEdit ? staff.staffId : '',
+        name,
+        status,
+        adminRole
+      }, this.currentStaff ? this.currentStaff.staffId : '');
+
+      alert(isEdit ? '担当者情報を更新しました。' : '担当者を登録しました。');
+      this.openStaffManagerModal();
+    };
+  }
+
+  openJobEditModal(job = null) {
+    const isEdit = Boolean(job);
+    const targetAgesSelected = isEdit && Array.isArray(job.targetAge) ? job.targetAge : [];
+    const salaryRangesSelected = isEdit && Array.isArray(job.salaryRange) ? job.salaryRange : [];
+    const editingJobId = isEdit ? job.jobId : '';
+
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 680px;">
+          <div class="modal-header">
+            <h3 class="modal-title">${isEdit ? '求人情報の編集' : '新規求人登録'}</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body" style="max-height: 75vh; overflow-y: auto;">
+            ${isEdit ? `
+              <div style="font-size:12px; color:var(--text-secondary); margin-bottom:12px; background:#EDF2F7; padding:6px 12px; border-radius:4px;">
+                編集対象求人ID: <code>${editingJobId}</code>
+              </div>
+            ` : ''}
+
+            <div class="form-group">
+              <label class="form-label">1. 企業名 <span class="badge badge-danger">必須</span></label>
+              <input type="text" id="job-company" class="form-control" value="${isEdit ? this.escapeHtml(job.companyName) : ''}" placeholder="例: 株式会社サンクスパートナーズ">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">1-2. 企業名よみ (任意・ひらがな/カタカナ)</label>
+              <input type="text" id="job-company-kana" class="form-control" value="${isEdit ? this.escapeHtml(job.companyNameKana || '') : ''}" placeholder="例: さんくすぱーとなーず">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">2. 求人名 <span class="badge badge-danger">必須</span></label>
+              <input type="text" id="job-title" class="form-control" value="${isEdit ? this.escapeHtml(job.jobTitle) : ''}" placeholder="例: 法人営業職（幹部候補）">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">3. 業種</label>
+              <select id="job-industry" class="form-select">
+                <option value="">未選択</option>
+                ${INDUSTRIES.map(i => `<option value="${i}" ${isEdit && job.industry === i ? 'selected' : ''}>${i}</option>`).join('')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">4. 職種</label>
+              <select id="job-position" class="form-select">
+                <option value="">未選択</option>
+                ${POSITIONS.map(p => `<option value="${p}" ${isEdit && job.position === p ? 'selected' : ''}>${p}</option>`).join('')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">5. ステータス</label>
+              <select id="job-status" class="form-select">
+                ${JOB_STATUSES.map(s => `<option value="${s}" ${isEdit && job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">6. 対象年齢 (複数選択可)</label>
+              <div style="display:flex; gap:16px; font-size:13px; margin-top:4px;">
+                ${TARGET_AGES.map(a => `
+                  <label style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
+                    <input type="checkbox" class="chk-job-age" value="${a}" ${targetAgesSelected.includes(a) ? 'checked' : ''}> ${a}
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">7. 役職</label>
+              <select id="job-role" class="form-select">
+                <option value="">未選択</option>
+                ${EXECUTIVE_ROLES.map(r => `<option value="${r}" ${isEdit && job.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">8. 年収帯 (複数選択可)</label>
+              <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px; font-size:13px; margin-top:4px;">
+                ${SALARY_RANGES.map(s => `
+                  <label style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
+                    <input type="checkbox" class="chk-job-salary" value="${s}" ${salaryRangesSelected.includes(s) ? 'checked' : ''}> ${s}
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">キャンセル</button>
+            <button id="btn-save-job-submit" class="btn btn-gold">${isEdit ? '変更内容を保存する' : '求人を登録する'}</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    mContainer.querySelector('#btn-save-job-submit').onclick = () => {
+      const companyName = mContainer.querySelector('#job-company').value.trim();
+      const companyNameKana = mContainer.querySelector('#job-company-kana').value.trim();
+      const jobTitle = mContainer.querySelector('#job-title').value.trim();
+
+      if (!companyName || !jobTitle) {
+        alert('企業名と求人名は必須です。');
+        return;
+      }
+
+      const allJobs = StorageService.getJobs();
+      const duplicate = allJobs.some(j => j.companyName === companyName && j.jobTitle === jobTitle && (!isEdit || j.jobId !== editingJobId));
+
+      if (duplicate && !isEdit) {
+        if (!confirm('同じ企業名・求人名の求人が登録されています。別求人として登録しますか？')) {
+          return;
+        }
+      }
+
+      const targetAge = Array.from(mContainer.querySelectorAll('.chk-job-age:checked')).map(el => el.value);
+      const salaryRange = Array.from(mContainer.querySelectorAll('.chk-job-salary:checked')).map(el => el.value);
+      const role = mContainer.querySelector('#job-role').value;
+
+      StorageService.saveJob({
+        jobId: editingJobId,
+        companyName,
+        companyNameKana,
+        jobTitle,
+        industry: mContainer.querySelector('#job-industry').value,
+        position: mContainer.querySelector('#job-position').value,
+        status: mContainer.querySelector('#job-status').value,
+        targetAge,
+        role,
+        salaryRange
+      }, this.currentStaff ? this.currentStaff.staffId : '');
+
+      alert(isEdit ? '変更内容を保存しました' : '求人を登録しました');
+      closeModal();
+      this.renderCurrentView();
+    };
+  }
+
+  openManageMyJobsModal() {
+    const myJobs = StorageService.getUserJobs(this.currentStaff.staffId);
+    const allJobs = StorageService.getActiveJobs();
+    const myJobIds = new Set(myJobs.map(uj => uj.jobId));
+
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 700px;">
+          <div class="modal-header">
+            <h3 class="modal-title">自分の担当求人を追加・整理</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <h4 style="font-size:13px; font-weight:700; margin-bottom:8px;">未担当の求人を追加</h4>
+            <div style="max-height: 200px; overflow-y: auto; border:1px solid var(--border-light); border-radius:4px; margin-bottom:20px;">
+              <table class="data-table">
+                <tbody>
+                  ${allJobs.map(j => `
+                    <tr>
+                      <td><strong>${this.escapeHtml(j.companyName)}</strong> / ${this.escapeHtml(j.jobTitle)}</td>
+                      <td style="text-align:right;">
+                        ${myJobIds.has(j.jobId) ? '<span class="badge badge-gray">追加済み</span>' : `
+                          <button class="btn btn-gold btn-sm btn-modal-add-job" data-job-id="${j.jobId}">追加</button>
+                        `}
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <h4 style="font-size:13px; font-weight:700; margin-bottom:8px;">担当中の求人（非表示・再表示）</h4>
+            <div style="max-height: 200px; overflow-y: auto; border:1px solid var(--border-light); border-radius:4px;">
+              <table class="data-table">
+                <tbody>
+                  ${myJobs.map(uj => {
+                    const job = StorageService.getJobById(uj.jobId);
+                    if (!job) return '';
+                    return `
+                      <tr>
+                        <td><strong>${this.escapeHtml(job.companyName)}</strong> / ${this.escapeHtml(job.jobTitle)}</td>
+                        <td>${uj.hidden ? '<span class="badge badge-warning">非表示中</span>' : '<span class="badge badge-success">表示中</span>'}</td>
+                        <td style="text-align:right;">
+                          <button class="btn btn-secondary btn-sm btn-modal-toggle-hide" data-staff-job-id="${uj.staffJobId}" data-hidden="${uj.hidden}">
+                            ${uj.hidden ? '再表示する' : '非表示にする'}
+                          </button>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">閉じる</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    mContainer.querySelectorAll('.btn-modal-add-job').forEach(btn => {
+      btn.onclick = () => {
+        const jobId = btn.getAttribute('data-job-id');
+        StorageService.addUserJob(this.currentStaff.staffId, jobId);
+        this.openManageMyJobsModal();
+      };
+    });
+
+    mContainer.querySelectorAll('.btn-modal-toggle-hide').forEach(btn => {
+      btn.onclick = () => {
+        const staffJobId = btn.getAttribute('data-staff-job-id');
+        const hidden = btn.getAttribute('data-hidden') === 'true';
+        StorageService.updateUserJob(staffJobId, { hidden: !hidden });
+        this.openManageMyJobsModal();
+      };
+    });
+  }
+
+  openAdminPasswordModal() {
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 400px;">
+          <div class="modal-header">
+            <h3 class="modal-title">管理者パスワード認証</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label">管理者パスワードを入力してください</label>
+              <input type="password" id="admin-pass-input" class="form-control">
+              <div id="admin-pass-error" style="color:var(--color-danger); font-size:12px; margin-top:4px; display:none;">パスワードが一致しません。</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">キャンセル</button>
+            <button id="btn-admin-login-submit" class="btn btn-gold">認証する</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    mContainer.querySelector('#btn-admin-login-submit').onclick = () => {
+      const pass = mContainer.querySelector('#admin-pass-input').value;
+      if (pass === ADMIN_PASSWORD) {
+        this.isAdminMode = true;
+        closeModal();
+        document.getElementById('admin-banner-container').style.display = 'block';
+
+        const navContainer = document.querySelector('.nav-list');
+        if (navContainer && !navContainer.querySelector('[data-view="data-management"]')) {
+          const item = document.createElement('a');
+          item.className = 'nav-item';
+          item.setAttribute('data-view', 'data-management');
+          item.href = '#';
+          item.innerHTML = '<i data-lucide="database"></i> データ管理';
+          item.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.switchView('data-management');
+          });
+          navContainer.appendChild(item);
+          if (window.lucide) window.lucide.createIcons();
+        }
+
+        alert('管理者モードを開始しました。');
+        this.renderCurrentView();
+      } else {
+        mContainer.querySelector('#admin-pass-error').style.display = 'block';
+      }
+    };
+  }
+
+  exitAdminMode() {
+    this.isAdminMode = false;
+    document.getElementById('admin-banner-container').style.display = 'none';
+
+    const item = document.querySelector('.nav-list [data-view="data-management"]');
+    if (item) item.remove();
+
+    if (this.currentView === 'data-management') {
+      this.switchView('daily-entry');
+    } else {
+      this.renderCurrentView();
+    }
+    alert('管理者モードを終了しました。');
+  }
+
+  openUsageGuideModal() {
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 680px;">
+          <div class="modal-header">
+            <h3 class="modal-title">使い方ガイド</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body" style="font-size:13px; line-height:1.7;">
+            <h4>■ ツールの目的と運用原則</h4>
+            <p>本ツールは候補者個人情報を保存せず、<strong>「担当者 × 求人 × 日付 × 媒体」</strong>単位でスカウト実績・返信数・ナレッジを一元管理します。</p>
+            <h4 style="margin-top:12px;">■ 企業の注力ランク</h4>
+            <p><strong>注力ランク（SS, S, A, B, 未設定）</strong>は社内でのスカウト活動の優先度を表す項目です。同じ企業の求人にはすべて同じランクが適用され、管理者モードから一括変更可能です。</p>
+            <h4 style="margin-top:12px;">■ 並び順と検索</h4>
+            <p>求人マスタおよび本日の実績入力画面は、デフォルトで<strong>「企業名よみ / 企業名（五十音順） → 求人名順」</strong>で表示されます。実績入力画面では固定求人が常に最上部に表示されます。</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">閉じる</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+  }
+
+  openAppInfoModal() {
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 480px;">
+          <div class="modal-header">
+            <h3 class="modal-title">アプリ情報</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body" style="font-size:13px;">
+            <p><strong>アプリ名:</strong> サンクスパートナーズ スカウト実績・求人管理一元化ツール</p>
+            <p><strong>バージョン:</strong> ${APP_VERSION}</p>
+            <p><strong>データ形式バージョン:</strong> ${DATA_FORMAT_VERSION}</p>
+            <p><strong>開発元:</strong> 株式会社サンクスパートナーズ</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">閉じる</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+  }
+
+  openNotificationsModal() {
+    const list = StorageService.getNotifications(this.currentStaff ? this.currentStaff.staffId : '');
+
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 520px;">
+          <div class="modal-header">
+            <h3 class="modal-title">通知一覧 (${list.length}件)</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            ${list.length === 0 ? '<p style="color:var(--text-muted); text-align:center;">通知はありません。</p>' : `
+              <ul style="list-style:none; padding:0;">
+                ${list.map(n => `
+                  <li style="padding:10px 0; border-bottom:1px solid var(--border-light);">
+                    <div style="font-weight:700; font-size:13px;">${this.escapeHtml(n.title)}</div>
+                    <div style="font-size:12px; color:var(--text-secondary);">${this.escapeHtml(n.content)}</div>
+                    <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">${n.createdAt.slice(0,16)}</div>
+                  </li>
+                `).join('')}
+              </ul>
+            `}
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">閉じる</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+  }
+
+  escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  window.appController = new AppController();
+});
