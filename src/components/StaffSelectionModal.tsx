@@ -62,7 +62,7 @@ export const StaffSelectionModal: React.FC = () => {
                 <div className="staff-card-info">
                   <div className="staff-card-name">
                     {staff.name}
-                    {staff.adminRole === 'admin' && <Shield className="icon-xs text-gold ml-1" title="管理者" />}
+                    {staff.adminRole === 'admin' && <span title="管理者"><Shield className="icon-xs text-gold ml-1" /></span>}
                   </div>
                   <div className="staff-card-status">利用中</div>
                 </div>

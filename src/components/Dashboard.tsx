@@ -309,7 +309,7 @@ export const Dashboard: React.FC = () => {
                       <div key={ms.media.mediaId} className="legend-item">
                         <span className="media-name-dot">{ms.media.name}</span>
                         <span className="legend-val">
-                          {ms.sent}件 ({formatPercent(ms.refEffectiveReplyRate)} 有効率)
+                          {ms.sent}件 ({formatPercent(ms.refEffectiveRate)} 有効率)
                         </span>
                       </div>
                     ))}
@@ -364,8 +364,8 @@ export const Dashboard: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    jobStats.map((js) => (
-                      <tr key={js.job.jobId}>
+                    jobStats.map((js, idx) => (
+                      <tr key={(js.job as any).jobId || idx}>
                         <td>
                           <div className="fw-bold">{js.job.companyName}</div>
                           <div className="text-sm text-muted">{js.job.jobTitle}</div>
