@@ -91,40 +91,50 @@ export const Jobs: React.FC = () => {
     }
   };
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // 求人モーダル保存 (管理者のみ)
   const handleSaveJobSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingJob?.companyName || !editingJob?.jobTitle || !currentStaff) return;
+    if (!editingJob?.companyName || !editingJob?.jobTitle || !currentStaff || isSubmitting) return;
 
-    const isNew = !editingJob.jobId;
-    const jobId = editingJob.jobId || 'job_' + Date.now();
+    setIsSubmitting(true);
+    try {
+      const isNew = !editingJob.jobId;
+      const jobId = editingJob.jobId || 'job_' + Date.now();
 
-    const jobToSave: Job = {
-      jobId,
-      companyName: editingJob.companyName.trim(),
-      jobTitle: editingJob.jobTitle.trim(),
-      industry: editingJob.industry || '',
-      position: editingJob.position || '',
-      status: (editingJob.status as JobStatus) || '準備中',
-      targetAge: editingJob.targetAge || [],
-      role: editingJob.role || '',
-      salaryRange: editingJob.salaryRange || [],
-      archived: false,
-      createdStaffId: editingJob.createdStaffId || currentStaff.staffId,
-      updatedStaffId: currentStaff.staffId,
-      createdAt: editingJob.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+      const jobToSave: Job = {
+        jobId,
+        companyName: editingJob.companyName.trim(),
+        jobTitle: editingJob.jobTitle.trim(),
+        industry: editingJob.industry || '',
+        position: editingJob.position || '',
+        status: (editingJob.status as JobStatus) || '準備中',
+        targetAge: editingJob.targetAge || [],
+        role: editingJob.role || '',
+        salaryRange: editingJob.salaryRange || [],
+        archived: false,
+        createdStaffId: editingJob.createdStaffId || currentStaff.staffId,
+        updatedStaffId: currentStaff.staffId,
+        createdAt: editingJob.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
 
-    await saveJob(jobToSave);
+      await saveJob(jobToSave);
 
-    // 新規登録時は自動的に担当求人に追加
-    if (isNew) {
-      await handleAssignJob(jobId);
+      // 新規登録時は自動的に担当求人に追加
+      if (isNew) {
+        await handleAssignJob(jobId);
+      }
+
+      alert(isNew ? '新しい求人を正常に登録しました。' : '求人情報を更新しました。');
+      setEditingJob(null);
+      await loadData();
+    } catch (err: any) {
+      alert(`登録エラー: ${err?.message || '保存に失敗しました'}`);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setEditingJob(null);
-    await loadData();
   };
 
   // フィルタリング処理

@@ -3277,49 +3277,83 @@ class AppController {
   renderDashboardView(container) {
     const scopeStaffId = this.dashboardScopeStaffId || this.currentStaff.staffId;
     const periodKey = this.dashboardPeriodKey || 'week';
-    const isTeamManual = scopeStaffId === 'TEAM_MANUAL' || scopeStaffId === 'TEAM';
-    const isAutoScout = scopeStaffId === 'AUTO_SCOUT';
-    const isTotalScout = scopeStaffId === 'TOTAL_SCOUT';
 
     const range = AnalyticsService.getPeriodRange(periodKey);
 
     // フィルタリング
     let manualResults = [];
-    if (scopeStaffId !== 'AUTO_SCOUT') {
+    if (scopeStaffId !== 'AUTO_SCOUT' && scopeStaffId !== 'INBOUND' && scopeStaffId !== 'AUTO_PLUS_INBOUND') {
+      const isTeam = scopeStaffId === 'TEAM_MANUAL' || scopeStaffId === 'TEAM_PLUS_AUTO' || scopeStaffId === 'TOTAL_ALL';
       manualResults = AnalyticsService.filterResults({
-        staffId: (isTeamManual || isTotalScout) ? '' : scopeStaffId,
+        staffId: isTeam ? '' : scopeStaffId,
         periodKey
       });
     }
 
     let autoResults = [];
-    if (scopeStaffId === 'AUTO_SCOUT' || scopeStaffId === 'TOTAL_SCOUT' || isTeamManual) {
+    if (scopeStaffId === 'AUTO_SCOUT' || scopeStaffId === 'TEAM_PLUS_AUTO' || scopeStaffId === 'TOTAL_ALL' || scopeStaffId === 'AUTO_PLUS_INBOUND') {
       autoResults = AnalyticsService.filterAutoScoutResults({ periodKey });
     }
 
-    const totalMetrics = AnalyticsService.calculateTotalScoutMetrics(manualResults, autoResults);
-    const manualMetrics = totalMetrics.manual;
-    const autoMetrics = totalMetrics.auto;
-    const combinedMetrics = totalMetrics.total;
+    let inboundResults = [];
+    if (scopeStaffId === 'INBOUND' || scopeStaffId === 'TOTAL_ALL' || scopeStaffId === 'AUTO_PLUS_INBOUND') {
+      inboundResults = AnalyticsService.filterInboundResults({ periodKey });
+    }
 
-    let displaySent = manualMetrics.sentCount;
-    let displayTotalReply = manualMetrics.totalReplyCount;
-    let displayEffectiveReply = manualMetrics.effectiveReplyCount;
-    let displayTRate = manualMetrics.totalReplyRateFormatted;
-    let displayERate = manualMetrics.effectiveReplyRateFormatted;
+    const manualMetrics = AnalyticsService.calculateMetrics(manualResults);
+    const autoMetrics = AnalyticsService.calculateMetrics(autoResults);
+    const inboundMetrics = AnalyticsService.calculateInboundMetrics(inboundResults);
 
-    if (isAutoScout) {
+    let displaySent = 0;
+    let displayTotalReply = 0;
+    let displayEffectiveReply = 0;
+    let displayTRate = '－';
+    let displayERate = '－';
+
+    let labelSent = '送信数';
+
+    if (scopeStaffId === 'INBOUND') {
+      labelSent = 'エントリー数';
+      displaySent = inboundMetrics.entryCount;
+      displayTotalReply = inboundMetrics.effectiveCount;
+      displayEffectiveReply = inboundMetrics.effectiveCount;
+      displayTRate = inboundMetrics.effectiveRateFormatted;
+      displayERate = inboundMetrics.effectiveRateFormatted;
+    } else if (scopeStaffId === 'AUTO_SCOUT') {
+      labelSent = '自動スカウト送信数';
       displaySent = autoMetrics.sentCount;
       displayTotalReply = autoMetrics.totalReplyCount;
       displayEffectiveReply = autoMetrics.effectiveReplyCount;
       displayTRate = autoMetrics.totalReplyRateFormatted;
       displayERate = autoMetrics.effectiveReplyRateFormatted;
-    } else if (isTotalScout) {
-      displaySent = combinedMetrics.sentCount;
-      displayTotalReply = combinedMetrics.totalReplyCount;
-      displayEffectiveReply = combinedMetrics.effectiveReplyCount;
-      displayTRate = combinedMetrics.totalReplyRateFormatted;
-      displayERate = combinedMetrics.effectiveReplyRateFormatted;
+    } else if (scopeStaffId === 'TEAM_PLUS_AUTO') {
+      labelSent = 'チーム+自動スカウト送信';
+      displaySent = manualMetrics.sentCount + autoMetrics.sentCount;
+      displayTotalReply = manualMetrics.totalReplyCount + autoMetrics.totalReplyCount;
+      displayEffectiveReply = manualMetrics.effectiveReplyCount + autoMetrics.effectiveReplyCount;
+      displayTRate = displaySent > 0 ? `${((displayTotalReply / displaySent) * 100).toFixed(1)}%` : '－';
+      displayERate = displaySent > 0 ? `${((displayEffectiveReply / displaySent) * 100).toFixed(1)}%` : '－';
+    } else if (scopeStaffId === 'AUTO_PLUS_INBOUND') {
+      labelSent = '自動+インバウンド合計';
+      displaySent = autoMetrics.sentCount + inboundMetrics.entryCount;
+      displayTotalReply = autoMetrics.totalReplyCount + inboundMetrics.effectiveCount;
+      displayEffectiveReply = autoMetrics.effectiveReplyCount + inboundMetrics.effectiveCount;
+      displayTRate = displaySent > 0 ? `${((displayTotalReply / displaySent) * 100).toFixed(1)}%` : '－';
+      displayERate = displaySent > 0 ? `${((displayEffectiveReply / displaySent) * 100).toFixed(1)}%` : '－';
+    } else if (scopeStaffId === 'TOTAL_ALL') {
+      labelSent = '全体総アプローチ数';
+      displaySent = manualMetrics.sentCount + autoMetrics.sentCount + inboundMetrics.entryCount;
+      displayTotalReply = manualMetrics.totalReplyCount + autoMetrics.totalReplyCount + inboundMetrics.effectiveCount;
+      displayEffectiveReply = manualMetrics.effectiveReplyCount + autoMetrics.effectiveReplyCount + inboundMetrics.effectiveCount;
+      displayTRate = displaySent > 0 ? `${((displayTotalReply / displaySent) * 100).toFixed(1)}%` : '－';
+      displayERate = displaySent > 0 ? `${((displayEffectiveReply / displaySent) * 100).toFixed(1)}%` : '－';
+    } else {
+      labelSent = '手動スカウト送信数';
+      displaySent = manualMetrics.sentCount;
+      displayTotalReply = manualMetrics.totalReplyCount;
+      displayEffectiveReply = manualMetrics.effectiveReplyCount;
+      displayTRate = manualMetrics.totalReplyRateFormatted;
+      displayERate = manualMetrics.effectiveReplyRateFormatted;
     }
 
     container.innerHTML = `
@@ -3327,13 +3361,14 @@ class AppController {
         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
           <div style="display: flex; align-items: center; gap: 8px;">
             <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">表示対象:</span>
-            <select id="dash-scope-select" class="form-select" style="width: 250px; font-weight: 600;">
-              <option value="${this.currentStaff.staffId}" ${scopeStaffId === this.currentStaff.staffId ? 'selected' : ''}>自分の実績 [手動] (${this.currentStaff.name})</option>
-              <option value="TEAM_MANUAL" ${isTeamManual ? 'selected' : ''}>チーム手動実績 (全体合計)</option>
-              <option value="AUTO_SCOUT" ${isAutoScout ? 'selected' : ''}>自動スカウト実績 (システム送信)</option>
-              <option value="TOTAL_SCOUT" ${isTotalScout ? 'selected' : ''}>総スカウト実績 (手動＋自動)</option>
-              <option value="INBOUND" ${scopeStaffId === 'INBOUND' ? 'selected' : ''}>直接エントリー実績 (インバウンド)</option>
-              <option value="TOTAL_ALL" ${scopeStaffId === 'TOTAL_ALL' ? 'selected' : ''}>総獲得実績 (スカウト＋インバウンド)</option>
+            <select id="dash-scope-select" class="form-select" style="width: 270px; font-weight: 600;">
+              <option value="${this.currentStaff.staffId}" ${scopeStaffId === this.currentStaff.staffId ? 'selected' : ''}>自分の実績 (${this.currentStaff.name})</option>
+              <option value="TEAM_MANUAL" ${scopeStaffId === 'TEAM_MANUAL' ? 'selected' : ''}>チームの実績</option>
+              <option value="TEAM_PLUS_AUTO" ${scopeStaffId === 'TEAM_PLUS_AUTO' ? 'selected' : ''}>チーム+自動スカウト</option>
+              <option value="AUTO_SCOUT" ${scopeStaffId === 'AUTO_SCOUT' ? 'selected' : ''}>自動スカウト</option>
+              <option value="INBOUND" ${scopeStaffId === 'INBOUND' ? 'selected' : ''}>インバン</option>
+              <option value="TOTAL_ALL" ${scopeStaffId === 'TOTAL_ALL' ? 'selected' : ''}>チーム+自動スカウト+インバン</option>
+              <option value="AUTO_PLUS_INBOUND" ${scopeStaffId === 'AUTO_PLUS_INBOUND' ? 'selected' : ''}>自動スカウト+インバン</option>
               ${this.isAdminMode ? StorageService.getActiveUsers().map(u => `
                 <option value="${u.staffId}" ${scopeStaffId === u.staffId ? 'selected' : ''}>【個別】${u.name}</option>
               `).join('') : ''}
@@ -3357,7 +3392,7 @@ class AppController {
           <div style="font-size: 12px; color: var(--color-gold-hover); font-weight: 600;">
             集計対象期間: ${range.label}
           </div>
-          ${(periodKey === 'today' && (isAutoScout || isTotalScout)) ? `
+          ${(periodKey === 'today' && (scopeStaffId === 'AUTO_SCOUT' || scopeStaffId === 'TEAM_PLUS_AUTO' || scopeStaffId === 'TOTAL_ALL' || scopeStaffId === 'AUTO_PLUS_INBOUND')) ? `
             <div style="font-size:11.5px; color:#C53030; background:#FFF5F5; border:1px solid #FEB2B2; padding:3px 8px; border-radius:4px;">
               <i data-lucide="info" style="width:12px;height:12px;"></i> 自動スカウトは週次記録のため、今日の集計には含まれません。
             </div>
@@ -3367,19 +3402,16 @@ class AppController {
 
       <div class="kpi-grid">
         <div class="kpi-card">
-          <div class="kpi-label">${isTotalScout ? '総スカウト送信数' : isAutoScout ? '自動スカウト送信数' : '手動スカウト送信数'}</div>
+          <div class="kpi-label">${labelSent}</div>
           <div class="kpi-value">${displaySent.toLocaleString()}<span style="font-size:12px; font-weight:normal;"> 件</span></div>
-          ${isTotalScout ? `<div class="kpi-sub">手動: ${manualMetrics.sentCount}件 (${combinedMetrics.manualSentShare}) / 自動: ${autoMetrics.sentCount}件 (${combinedMetrics.autoSentShare})</div>` : ''}
         </div>
         <div class="kpi-card">
           <div class="kpi-label">総返信数</div>
           <div class="kpi-value">${displayTotalReply.toLocaleString()}<span style="font-size:12px; font-weight:normal;"> 件</span></div>
-          ${isTotalScout ? `<div class="kpi-sub">手動: ${manualMetrics.totalReplyCount}件 / 自動: ${autoMetrics.totalReplyCount}件</div>` : ''}
         </div>
         <div class="kpi-card">
           <div class="kpi-label">有効返信数</div>
           <div class="kpi-value" style="color:var(--color-gold-accent);">${displayEffectiveReply.toLocaleString()}<span style="font-size:12px; font-weight:normal;"> 件</span></div>
-          ${isTotalScout ? `<div class="kpi-sub">手動: ${manualMetrics.effectiveReplyCount}件 / 自動: ${autoMetrics.effectiveReplyCount}件</div>` : ''}
         </div>
         <div class="kpi-card">
           <div class="kpi-label">参考総返信率</div>
@@ -5007,6 +5039,10 @@ class AppController {
       this.switchView('data-management');
     });
 
+    container.querySelector('#btn-admin-data-manage')?.addEventListener('click', () => {
+      this.switchView('data-management');
+    });
+
     // 検索・並び替え・絞り込みイベント
     const searchInp = container.querySelector('#jobs-master-search-input');
     searchInp?.addEventListener('input', (e) => {
@@ -5171,8 +5207,11 @@ class AppController {
   // 4. 分析画面
   // =========================================================================
   renderAnalysisView(container) {
+    if (!this.activeAnalysisTab) this.activeAnalysisTab = 'dow-trend';
+
     container.innerHTML = `
       <div class="tab-bar">
+        <div class="tab-item ${this.activeAnalysisTab === 'dow-trend' ? 'active' : ''}" data-analysis-tab="dow-trend">曜日別・推移</div>
         <div class="tab-item ${this.activeAnalysisTab === 'attribute' ? 'active' : ''}" data-analysis-tab="attribute">属性検索・分析</div>
         <div class="tab-item ${this.activeAnalysisTab === 'similar' ? 'active' : ''}" data-analysis-tab="similar">類似求人検索</div>
         <div class="tab-item ${this.activeAnalysisTab === 'compare' ? 'active' : ''}" data-analysis-tab="compare">求人比較 (2~5件)</div>
@@ -5190,7 +5229,9 @@ class AppController {
 
     const content = container.querySelector('#analysis-tab-content');
     if (content) {
-      if (this.activeAnalysisTab === 'attribute') {
+      if (this.activeAnalysisTab === 'dow-trend') {
+        this.renderDowTrendAnalysis(content);
+      } else if (this.activeAnalysisTab === 'attribute') {
         this.renderAttributeAnalysis(content);
       } else if (this.activeAnalysisTab === 'similar') {
         this.renderSimilarJobs(content);
@@ -5198,6 +5239,148 @@ class AppController {
         this.renderJobComparison(content);
       }
     }
+  }
+
+  renderDowTrendAnalysis(container) {
+    const periodKey = this.analysisDowPeriodKey || 'month';
+    const staffId = this.analysisDowStaffId !== undefined ? this.analysisDowStaffId : (this.currentStaff ? this.currentStaff.staffId : '');
+
+    const results = AnalyticsService.filterResults({ staffId, periodKey });
+    const dowStats = AnalyticsService.aggregateByDayOfWeek(results);
+
+    // 日次推移データの生成
+    const range = AnalyticsService.getPeriodRange(periodKey);
+    const dateMap = new Map();
+
+    const curr = new Date(range.startStr + 'T00:00:00+09:00');
+    const end = new Date(range.endStr + 'T00:00:00+09:00');
+    while (curr <= end) {
+      const dStr = curr.toISOString().slice(0, 10);
+      dateMap.set(dStr, { sent: 0, totalReply: 0, effectiveReply: 0 });
+      curr.setDate(curr.getDate() + 1);
+    }
+
+    results.forEach(r => {
+      if (dateMap.has(r.date)) {
+        const item = dateMap.get(r.date);
+        item.sent += Number(r.sentCount || 0);
+        item.totalReply += Number(r.totalReplyCount || 0);
+        item.effectiveReply += Number(r.effectiveReplyCount || 0);
+      }
+    });
+
+    const trendLabels = Array.from(dateMap.keys()).map(d => d.slice(5));
+    const trendSent = Array.from(dateMap.values()).map(v => v.sent);
+    const trendEff = Array.from(dateMap.values()).map(v => v.effectiveReply);
+
+    const users = StorageService.getActiveUsers();
+
+    container.innerHTML = `
+      <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">対象者:</span>
+            <select id="analysis-dow-staff-select" class="form-select" style="width: 200px;">
+              <option value="" ${staffId === '' ? 'selected' : ''}>チーム全員 (全体)</option>
+              ${users.map(u => `<option value="${u.staffId}" ${staffId === u.staffId ? 'selected' : ''}>${u.name}</option>`).join('')}
+            </select>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">集計期間:</span>
+            <select id="analysis-dow-period-select" class="form-select" style="width: 140px;">
+              <option value="week" ${periodKey === 'week' ? 'selected' : ''}>今週</option>
+              <option value="month" ${periodKey === 'month' ? 'selected' : ''}>今月</option>
+              <option value="3months" ${periodKey === '3months' ? 'selected' : ''}>3か月</option>
+              <option value="halfYear" ${periodKey === 'halfYear' ? 'selected' : ''}>半年</option>
+              <option value="year" ${periodKey === 'year' ? 'selected' : ''}>1年</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4 class="card-title"><i data-lucide="bar-chart-2"></i> 曜日別 送信・有効返信状況</h4>
+          <div class="chart-container" style="margin-top: 12px; height: 260px;"><canvas id="dowAnalysisChart"></canvas></div>
+        </div>
+        <div class="card">
+          <h4 class="card-title"><i data-lucide="trending-up"></i> 日次送信・有効返信推移</h4>
+          <div class="chart-container" style="margin-top: 12px; height: 260px;"><canvas id="trendAnalysisChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h4 class="card-title"><i data-lucide="calendar"></i> 曜日別実績詳細</h4>
+        <div style="overflow-x:auto; margin-top:12px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>曜日</th>
+                <th style="text-align:right;">送信数</th>
+                <th style="text-align:right;">総返信数</th>
+                <th style="text-align:right;">有効返信数</th>
+                <th style="text-align:right;">参考有効返信率</th>
+                <th style="text-align:right;">送信構成比</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${dowStats.map(d => `
+                <tr>
+                  <td><strong>${d.dayName}</strong></td>
+                  <td style="text-align:right;">${d.sentCount}件</td>
+                  <td style="text-align:right;">${d.totalReplyCount}件</td>
+                  <td style="text-align:right; font-weight:700; color:var(--color-gold-accent);">${d.effectiveReplyCount}件</td>
+                  <td style="text-align:right;">${d.effectiveReplyRateFormatted}</td>
+                  <td style="text-align:right;">${d.share}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    container.querySelector('#analysis-dow-staff-select')?.addEventListener('change', (e) => {
+      this.analysisDowStaffId = e.target.value;
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#analysis-dow-period-select')?.addEventListener('change', (e) => {
+      this.analysisDowPeriodKey = e.target.value;
+      this.renderCurrentView();
+    });
+
+    setTimeout(() => {
+      const ctxDow = document.getElementById('dowAnalysisChart')?.getContext('2d');
+      if (ctxDow && window.Chart) {
+        new Chart(ctxDow, {
+          type: 'bar',
+          data: {
+            labels: dowStats.map(d => d.dayName),
+            datasets: [
+              { label: '送信数', data: dowStats.map(d => d.sentCount), backgroundColor: '#1B2A4A' },
+              { label: '有効返信', data: dowStats.map(d => d.effectiveReplyCount), backgroundColor: '#C5A059' }
+            ]
+          },
+          options: { responsive: true, maintainAspectRatio: false }
+        });
+      }
+
+      const ctxTrend = document.getElementById('trendAnalysisChart')?.getContext('2d');
+      if (ctxTrend && window.Chart) {
+        new Chart(ctxTrend, {
+          type: 'line',
+          data: {
+            labels: trendLabels,
+            datasets: [
+              { label: '送信数', data: trendSent, borderColor: '#1B2A4A', backgroundColor: 'rgba(27,42,74,0.1)', fill: true, tension: 0.3 },
+              { label: '有効返信数', data: trendEff, borderColor: '#C5A059', backgroundColor: 'rgba(197,160,89,0.1)', fill: true, tension: 0.3 }
+            ]
+          },
+          options: { responsive: true, maintainAspectRatio: false }
+        });
+      }
+    }, 50);
   }
 
   renderAttributeAnalysis(container) {
@@ -6283,7 +6466,10 @@ class AppController {
     mContainer.querySelector('.modal-close').onclick = closeModal;
     mContainer.querySelector('.modal-cancel').onclick = closeModal;
 
-    mContainer.querySelector('#btn-save-job-submit').onclick = () => {
+    const submitBtn = mContainer.querySelector('#btn-save-job-submit');
+    submitBtn.onclick = () => {
+      if (submitBtn.disabled) return;
+
       const companyName = mContainer.querySelector('#job-company').value.trim();
       const companyNameKana = mContainer.querySelector('#job-company-kana').value.trim();
       const jobTitle = mContainer.querySelector('#job-title').value.trim();
@@ -6302,26 +6488,37 @@ class AppController {
         }
       }
 
-      const targetAge = Array.from(mContainer.querySelectorAll('.chk-job-age:checked')).map(el => el.value);
-      const salaryRange = Array.from(mContainer.querySelectorAll('.chk-job-salary:checked')).map(el => el.value);
-      const role = mContainer.querySelector('#job-role').value;
+      submitBtn.disabled = true;
+      submitBtn.textContent = '登録中…';
 
-      StorageService.saveJob({
-        jobId: editingJobId,
-        companyName,
-        companyNameKana,
-        jobTitle,
-        industry: mContainer.querySelector('#job-industry').value,
-        position: mContainer.querySelector('#job-position').value,
-        status: mContainer.querySelector('#job-status').value,
-        targetAge,
-        role,
-        salaryRange
-      }, this.currentStaff ? this.currentStaff.staffId : '');
+      try {
+        const targetAge = Array.from(mContainer.querySelectorAll('.chk-job-age:checked')).map(el => el.value);
+        const salaryRange = Array.from(mContainer.querySelectorAll('.chk-job-salary:checked')).map(el => el.value);
+        const role = mContainer.querySelector('#job-role').value;
 
-      alert(isEdit ? '変更内容を保存しました' : '求人を登録しました');
-      closeModal();
-      this.renderCurrentView();
+        const savedJob = StorageService.saveJob({
+          jobId: editingJobId,
+          companyName,
+          companyNameKana,
+          jobTitle,
+          industry: mContainer.querySelector('#job-industry').value,
+          position: mContainer.querySelector('#job-position').value,
+          status: mContainer.querySelector('#job-status').value,
+          targetAge,
+          role,
+          salaryRange
+        }, this.currentStaff ? this.currentStaff.staffId : '');
+
+        alert(isEdit ? '求人情報を更新（保存）しました。' : '新しい求人を正常に登録（追加）しました。');
+        closeModal();
+
+        // 即時（リアルタイム）画面反映
+        this.renderCurrentView();
+      } catch (err) {
+        alert(`登録エラー: ${err.message}`);
+        submitBtn.disabled = false;
+        submitBtn.textContent = isEdit ? '変更内容を保存する' : '求人を登録する';
+      }
     };
   }
 
@@ -6447,13 +6644,13 @@ class AppController {
         closeModal();
         document.getElementById('admin-banner-container').style.display = 'block';
 
-        const navContainer = document.querySelector('.nav-list');
+        const navContainer = document.querySelector('.sidebar-nav');
         if (navContainer && !navContainer.querySelector('[data-view="data-management"]')) {
           const item = document.createElement('a');
           item.className = 'nav-item';
           item.setAttribute('data-view', 'data-management');
-          item.href = '#';
-          item.innerHTML = '<i data-lucide="database"></i> データ管理';
+          item.href = '#data-management';
+          item.innerHTML = '<i data-lucide="database"></i> <span>データ管理 (管理者)</span>';
           item.addEventListener('click', (e) => {
             e.preventDefault();
             this.switchView('data-management');
@@ -6474,7 +6671,7 @@ class AppController {
     this.isAdminMode = false;
     document.getElementById('admin-banner-container').style.display = 'none';
 
-    const item = document.querySelector('.nav-list [data-view="data-management"]');
+    const item = document.querySelector('.sidebar-nav [data-view="data-management"]');
     if (item) item.remove();
 
     if (this.currentView === 'data-management') {
