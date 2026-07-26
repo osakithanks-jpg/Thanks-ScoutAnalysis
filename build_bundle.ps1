@@ -17,5 +17,16 @@ foreach ($f in $files) {
 
 $combined += "`ndocument.addEventListener('DOMContentLoaded', () => { window.app = new AppController(); });`n"
 
-[System.IO.File]::WriteAllText("C:\Users\yosak\.gemini\antigravity\scratch\scout-analytics-app\js\bundle.js", $combined, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host "bundle.js successfully built!"
+$appRoot = "C:\Users\yosak\.gemini\antigravity\scratch\scout-analytics-app"
+$publicJsDir = Join-Path $appRoot "public\js"
+if (-not (Test-Path $publicJsDir)) { New-Item -ItemType Directory -Path $publicJsDir -Force }
+
+[System.IO.File]::WriteAllText((Join-Path $appRoot "js\bundle.js"), $combined, (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText((Join-Path $appRoot "public\js\bundle.js"), $combined, (New-Object System.Text.UTF8Encoding($false)))
+
+$cssPath = Join-Path $appRoot "styles.css"
+if (Test-Path $cssPath) {
+    Copy-Item -Path $cssPath -Destination (Join-Path $appRoot "public\styles.css") -Force
+}
+
+Write-Host "bundle.js & public assets successfully built!"
