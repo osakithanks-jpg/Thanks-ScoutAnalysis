@@ -136,6 +136,11 @@ class AppController {
   }
 
   switchView(viewName) {
+    if (viewName === 'data-management' && !this.isAdminMode) {
+      this.openAdminPasswordModal();
+      return;
+    }
+
     this.currentView = viewName;
     document.querySelectorAll('.nav-item').forEach(el => {
       if (el.getAttribute('data-view') === viewName) {
@@ -3269,11 +3274,15 @@ class AppController {
 
         <h4 style="font-size:13px; font-weight:700; margin-top:20px; color:var(--color-gold-hover);">■ 管理者専用 全テーブルエクスポート</h4>
         <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px; margin-top:8px;">
-          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="company_master">企業マスタ CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="all_scout_detail">全実績 (手動・自動・インバウンド) CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="staff_scout_summary">担当者別実績 CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="all_job_summary">求人別集計 CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="all_media_summary">媒体別集計 CSV</button>
           <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="user_master">担当者マスタ CSV</button>
-          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="jobs_list">求人マスタ全データ CSV</button>
-          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="scout_messages_all">スカウト文面マスタ CSV</button>
-          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="change_logs_all">監査変更履歴 CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="company_job_master">求人マスタ CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="knowledge_all_admin">ナレッジ CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="scout_messages_all">スカウト文面 CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="change_logs_all">変更履歴 CSV</button>
         </div>
       </div>
 
@@ -3511,8 +3520,15 @@ class AppController {
       const confirmText = mContainer.querySelector('#reset-confirm-text-input').value;
 
       try {
+        // 削除直前に自動でJSONバックアップを取得（ファイルダウンロード）
+        try {
+          StorageService.exportJSONBackup();
+        } catch (bErr) {
+          console.warn('リセット前自動バックアップ処理警告:', bErr);
+        }
+
         StorageService.resetAllData(pass, confirmText, options, this.currentStaff ? this.currentStaff.staffId : '');
-        alert('全データリセットが完了しました');
+        alert('自動バックアップを出力し、データの選択リセットが完了しました。');
         closeModal();
         this.renderCurrentView();
       } catch (err) {

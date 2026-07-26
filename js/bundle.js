@@ -1431,6 +1431,91 @@ class StorageService {
         });
         break;
       }
+      case 'all_scout_detail': {
+        filename = `all_scout_detail_${nowJST}.csv`;
+        headers = ['区分', '日付/期間', '担当者名', '企業名', '注力ランク', '求人名', '媒体名/経路', '送信/エントリー数', '総返信数', '有効返信/有効エントリー', '実績ステータス', '更新日時'];
+        
+        // 手動スカウト
+        this.getScoutResults().forEach(r => {
+          const j = jobs.get(r.jobId) || {};
+          const rankObj = PRIORITY_RANKS[j.priorityRank] || PRIORITY_RANKS.UNSET;
+          rows.push([
+            '手動スカウト',
+            r.date,
+            sanitize(users.get(r.staffId) || r.staffId),
+            sanitize(j.companyName),
+            sanitize(rankObj.fullLabel),
+            sanitize(j.jobTitle),
+            sanitize(media.get(r.mediaId)),
+            r.sentCount,
+            r.totalReplyCount,
+            r.effectiveReplyCount,
+            sanitize(r.status),
+            formatTime(r.updatedAt)
+          ]);
+        });
+
+        // 自動スカウト
+        this.getAutoScoutWeeklyResults().forEach(r => {
+          const j = jobs.get(r.jobId) || {};
+          const rankObj = PRIORITY_RANKS[j.priorityRank] || PRIORITY_RANKS.UNSET;
+          rows.push([
+            '自動スカウト',
+            `${r.weekStartDate}〜${r.weekEndDate}`,
+            'システム自動',
+            sanitize(j.companyName),
+            sanitize(rankObj.fullLabel),
+            sanitize(j.jobTitle),
+            sanitize(media.get(r.mediaId)),
+            r.sentCount,
+            r.totalReplyCount,
+            r.effectiveReplyCount,
+            sanitize(r.status === 'valid' ? '有効' : '取消済み'),
+            formatTime(r.updatedAt)
+          ]);
+        });
+
+        // インバウンド
+        const routesMap = new Map((DEFAULT_INBOUND_ROUTES || []).map(r => [r.id, r.name]));
+        this.getInboundResults().forEach(r => {
+          const j = jobs.get(r.jobId) || {};
+          const rankObj = PRIORITY_RANKS[j.priorityRank] || PRIORITY_RANKS.UNSET;
+          rows.push([
+            'インバウンド',
+            r.date,
+            '直接エントリー',
+            sanitize(j.companyName),
+            sanitize(rankObj.fullLabel),
+            sanitize(j.jobTitle),
+            sanitize(routesMap.get(r.routeId) || r.routeId),
+            r.entryCount,
+            r.effectiveCount,
+            r.effectiveCount,
+            sanitize(r.status || 'valid'),
+            formatTime(r.updatedAt)
+          ]);
+        });
+        break;
+      }
+      case 'staff_scout_summary': {
+        filename = `staff_scout_summary_${nowJST}.csv`;
+        headers = ['担当者ID', '担当者名', '手動送信数', '総返信数', '有効返信数', '参考総返信率(%)', '参考有効返信率(%)'];
+        const results = this.getValidScoutResults();
+        const map = new Map();
+        results.forEach(r => {
+          if (!map.has(r.staffId)) map.set(r.staffId, { sent: 0, total: 0, effective: 0 });
+          const stat = map.get(r.staffId);
+          stat.sent += r.sentCount; stat.total += r.totalReplyCount; stat.effective += r.effectiveReplyCount;
+        });
+        this.getUsers().forEach(u => {
+          const stat = map.get(u.staffId) || { sent: 0, total: 0, effective: 0 };
+          const tRate = stat.sent > 0 ? ((stat.total / stat.sent) * 100).toFixed(1) : '-';
+          const eRate = stat.sent > 0 ? ((stat.effective / stat.sent) * 100).toFixed(1) : '-';
+          rows.push([u.staffId, sanitize(u.name), stat.sent, stat.total, stat.effective, tRate, eRate]);
+        });
+        break;
+      }
+      case 'all_job_summary':
       case 'total_job_summary': {
         filename = `job_total_scout_summary_${nowJST}.csv`;
         headers = ['企業名', '求人名', '手動送信数', '自動送信数', '総送信数', '手動総返信数', '自動総返信数', '総返信数', '手動有効返信数', '自動有効返信数', '総有効返信数', '参考総返信率(%)', '参考総有効返信率(%)'];
@@ -1467,6 +1552,7 @@ class StorageService {
         });
         break;
       }
+      case 'all_media_summary':
       case 'total_media_summary': {
         filename = `media_total_scout_summary_${nowJST}.csv`;
         headers = ['媒体名', '手動送信数', '自動送信数', '総送信数', '手動総返信数', '自動総返信数', '総返信数', '手動有効返信数', '自動有効返信数', '総有効返信数', '参考総返信率(%)', '参考総有効返信率(%)'];
@@ -1503,112 +1589,7 @@ class StorageService {
         });
         break;
       }
-      case 'user_scout_detail': {
-        filename = `scout_results_detail_${nowJST}.csv`;
-        headers = ['日付', '担当者名', '企業ID', '企業名', '注力ランク', '求人名', '媒体名', '送信数', '総返信数', '有効返信数', '実績ステータス', '更新日時'];
-        const results = this.getScoutResults().filter(r => !currentStaffId || r.staffId === currentStaffId);
-        rows = results.map(r => {
-          const j = jobs.get(r.jobId) || {};
-          const rankObj = PRIORITY_RANKS[j.priorityRank] || PRIORITY_RANKS.UNSET;
-          return [
-            r.date,
-            sanitize(users.get(r.staffId) || r.staffId),
-            j.companyId || '',
-            sanitize(j.companyName),
-            sanitize(rankObj.fullLabel),
-            sanitize(j.jobTitle),
-            sanitize(media.get(r.mediaId)),
-            r.sentCount,
-            r.totalReplyCount,
-            r.effectiveReplyCount,
-            sanitize(r.status),
-            formatTime(r.updatedAt)
-          ];
-        });
-        break;
-      }
-      case 'user_job_summary': {
-        filename = `user_job_summary_${nowJST}.csv`;
-        headers = ['企業ID', '企業名', '注力ランク', '求人名', '送信数', '総返信数', '有効返信数', '参考総返信率(%)', '参考有効返信率(%)', '有効返信1件あたり送信数'];
-        const results = this.getValidScoutResults().filter(r => !currentStaffId || r.staffId === currentStaffId);
-        const map = new Map();
-        results.forEach(r => {
-          if (!map.has(r.jobId)) map.set(r.jobId, { sent: 0, total: 0, effective: 0 });
-          const stat = map.get(r.jobId);
-          stat.sent += r.sentCount; stat.total += r.totalReplyCount; stat.effective += r.effectiveReplyCount;
-        });
-        map.forEach((stat, jobId) => {
-          const j = jobs.get(jobId) || {};
-          const rankObj = PRIORITY_RANKS[j.priorityRank] || PRIORITY_RANKS.UNSET;
-          const tRate = stat.sent > 0 ? ((stat.total / stat.sent) * 100).toFixed(1) : '-';
-          const eRate = stat.sent > 0 ? ((stat.effective / stat.sent) * 100).toFixed(1) : '-';
-          const sentPerEff = stat.effective > 0 ? (stat.sent / stat.effective).toFixed(1) : '-';
-          rows.push([j.companyId || '', sanitize(j.companyName), sanitize(rankObj.fullLabel), sanitize(j.jobTitle), stat.sent, stat.total, stat.effective, tRate, eRate, sentPerEff]);
-        });
-        break;
-      }
-      case 'user_media_summary': {
-        filename = `user_media_summary_${nowJST}.csv`;
-        headers = ['媒体名', '送信数', '総返信数', '有効返信数', '参考総返信率(%)', '参考有効返信率(%)', '送信構成比(%)'];
-        const results = this.getValidScoutResults().filter(r => !currentStaffId || r.staffId === currentStaffId);
-        const totalSentAll = results.reduce((a, b) => a + b.sentCount, 0);
-        const map = new Map();
-        results.forEach(r => {
-          if (!map.has(r.mediaId)) map.set(r.mediaId, { sent: 0, total: 0, effective: 0 });
-          const stat = map.get(r.mediaId);
-          stat.sent += r.sentCount; stat.total += r.totalReplyCount; stat.effective += r.effectiveReplyCount;
-        });
-        map.forEach((stat, mediaId) => {
-          const mName = media.get(mediaId) || mediaId;
-          const tRate = stat.sent > 0 ? ((stat.total / stat.sent) * 100).toFixed(1) : '-';
-          const eRate = stat.sent > 0 ? ((stat.effective / stat.sent) * 100).toFixed(1) : '-';
-          const share = totalSentAll > 0 ? ((stat.sent / totalSentAll) * 100).toFixed(1) : '0';
-          rows.push([sanitize(mName), stat.sent, stat.total, stat.effective, tRate, eRate, share]);
-        });
-        break;
-      }
-      case 'team_summary': {
-        filename = `team_summary_${nowJST}.csv`;
-        headers = ['企業名', '注力ランク', '求人名', '媒体名', '送信数', '総返信数', '有効返信数', '参考総返信率(%)', '参考有効返信率(%)'];
-        const results = this.getValidScoutResults();
-        const map = new Map();
-        results.forEach(r => {
-          const k = `${r.jobId}_${r.mediaId}`;
-          if (!map.has(k)) map.set(k, { jobId: r.jobId, mediaId: r.mediaId, sent: 0, total: 0, effective: 0 });
-          const stat = map.get(k);
-          stat.sent += r.sentCount; stat.total += r.totalReplyCount; stat.effective += r.effectiveReplyCount;
-        });
-        map.forEach(stat => {
-          const j = jobs.get(stat.jobId) || {};
-          const rankObj = PRIORITY_RANKS[j.priorityRank] || PRIORITY_RANKS.UNSET;
-          const tRate = stat.sent > 0 ? ((stat.total / stat.sent) * 100).toFixed(1) : '-';
-          const eRate = stat.sent > 0 ? ((stat.effective / stat.sent) * 100).toFixed(1) : '-';
-          rows.push([sanitize(j.companyName), sanitize(rankObj.fullLabel), sanitize(j.jobTitle), sanitize(media.get(stat.mediaId)), stat.sent, stat.total, stat.effective, tRate, eRate]);
-        });
-        break;
-      }
-      case 'inbound_detail': {
-        filename = `inbound_detail_${nowJST}.csv`;
-        headers = ['企業名', '注力ランク', '求人名', '記録日', '流入経路', 'エントリー数', '有効エントリー数', '有効率(%)'];
-        const results = this.getValidInboundResults();
-        const routesMap = new Map((DEFAULT_INBOUND_ROUTES || []).map(r => [r.id, r.name]));
-        results.forEach(r => {
-          const j = jobs.get(r.jobId) || {};
-          const rankObj = PRIORITY_RANKS[j.priorityRank] || PRIORITY_RANKS.UNSET;
-          const eRate = r.entryCount > 0 ? ((r.effectiveCount / r.entryCount) * 100).toFixed(1) : '-';
-          rows.push([
-            sanitize(j.companyName),
-            sanitize(rankObj.fullLabel),
-            sanitize(j.jobTitle),
-            r.date,
-            sanitize(routesMap.get(r.routeId) || r.routeId),
-            r.entryCount,
-            r.effectiveCount,
-            eRate
-          ]);
-        });
-        break;
-      }
+      case 'company_job_master':
       case 'jobs_list': {
         filename = `jobs_master_${nowJST}.csv`;
         headers = ['求人ID', '企業ID', '企業名', '企業名よみ', '注力ランクID', '注力ランク名称', '求人名', '業種', '職種', 'ステータス', '対象年齢', '役職', '年収帯', 'アーカイブ状態', '作成日時', '更新日時'];
@@ -1665,6 +1646,7 @@ class StorageService {
         ]);
         break;
       }
+      case 'knowledge_all_admin':
       case 'knowledge_all': {
         filename = `knowledge_${nowJST}.csv`;
         headers = ['ナレッジID', '企業名', '求人名', '記録日', '記録者名', '種別', 'タイトル', '事実', '原因', '工夫', '結果', '次に試すこと', 'タグ', '作成日時'];
@@ -2749,6 +2731,11 @@ class AppController {
   }
 
   switchView(viewName) {
+    if (viewName === 'data-management' && !this.isAdminMode) {
+      this.openAdminPasswordModal();
+      return;
+    }
+
     this.currentView = viewName;
     document.querySelectorAll('.nav-item').forEach(el => {
       if (el.getAttribute('data-view') === viewName) {
@@ -5882,11 +5869,15 @@ class AppController {
 
         <h4 style="font-size:13px; font-weight:700; margin-top:20px; color:var(--color-gold-hover);">■ 管理者専用 全テーブルエクスポート</h4>
         <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px; margin-top:8px;">
-          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="company_master">企業マスタ CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="all_scout_detail">全実績 (手動・自動・インバウンド) CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="staff_scout_summary">担当者別実績 CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="all_job_summary">求人別集計 CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="all_media_summary">媒体別集計 CSV</button>
           <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="user_master">担当者マスタ CSV</button>
-          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="jobs_list">求人マスタ全データ CSV</button>
-          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="scout_messages_all">スカウト文面マスタ CSV</button>
-          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="change_logs_all">監査変更履歴 CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="company_job_master">求人マスタ CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="knowledge_all_admin">ナレッジ CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="scout_messages_all">スカウト文面 CSV</button>
+          <button class="btn btn-gold btn-sm btn-export-csv" data-csv-type="change_logs_all">変更履歴 CSV</button>
         </div>
       </div>
 
@@ -6124,8 +6115,15 @@ class AppController {
       const confirmText = mContainer.querySelector('#reset-confirm-text-input').value;
 
       try {
+        // 削除直前に自動でJSONバックアップを取得（ファイルダウンロード）
+        try {
+          StorageService.exportJSONBackup();
+        } catch (bErr) {
+          console.warn('リセット前自動バックアップ処理警告:', bErr);
+        }
+
         StorageService.resetAllData(pass, confirmText, options, this.currentStaff ? this.currentStaff.staffId : '');
-        alert('全データリセットが完了しました');
+        alert('自動バックアップを出力し、データの選択リセットが完了しました。');
         closeModal();
         this.renderCurrentView();
       } catch (err) {
