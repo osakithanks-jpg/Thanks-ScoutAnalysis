@@ -2307,58 +2307,69 @@ class AppController {
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-header-flex">
+      <div class="card" style="padding: 0; overflow: hidden;">
+        <div class="card-header-flex" style="padding: 20px 24px 16px 24px; margin-bottom: 0;">
           <h3 class="card-title"><i data-lucide="briefcase"></i> 求人マスタ一覧 (${filteredJobs.length}件 / 全${allJobs.filter(j=>!j.archived).length}件)</h3>
           ${this.isAdminMode ? `<button id="btn-create-job" class="btn btn-gold"><i data-lucide="plus"></i> 新規求人を登録</button>` : ''}
         </div>
 
-        <div style="overflow-x: auto;">
+        <div class="data-table-wrapper" style="overflow-x: auto;">
           <table class="data-table">
             <thead>
               <tr>
-                <th style="min-width:180px;">企業名</th>
-                <th style="min-width:130px;">注力ランク</th>
-                <th style="min-width:180px;">求人名</th>
-                <th>業種</th>
-                <th>職種</th>
-                <th>ステータス</th>
-                <th>対象年齢</th>
-                <th>役職</th>
-                <th>年収帯</th>
-                <th style="min-width:120px;">操作</th>
+                <th style="min-width: 150px;">企業名</th>
+                <th style="min-width: 135px; text-align: center;">注力ランク</th>
+                <th style="min-width: 180px;">求人名</th>
+                <th style="min-width: 95px;">業種</th>
+                <th style="min-width: 105px;">職種</th>
+                <th style="min-width: 125px; text-align: center;">ステータス</th>
+                <th style="min-width: 140px;">対象年齢</th>
+                <th style="min-width: 100px;">役職</th>
+                <th style="min-width: 180px;">年収帯</th>
+                <th style="min-width: 120px; text-align: center;">操作</th>
               </tr>
             </thead>
             <tbody>
               ${filteredJobs.length === 0 ? `
                 <tr>
-                  <td colspan="10" style="text-align:center; padding:32px; color:var(--text-muted); font-weight:600;">
+                  <td colspan="10" style="text-align:center; padding:36px; color:var(--text-muted); font-weight:600;">
                     <i data-lucide="search-x" style="vertical-align:middle; margin-right:4px;"></i> 条件に一致する求人がありません
                   </td>
                 </tr>
               ` : filteredJobs.map(j => {
-                const agesStr = Array.isArray(j.targetAge) && j.targetAge.length > 0 ? j.targetAge.join('、') : '未設定';
-                const roleStr = j.role || '未設定';
-                const salariesStr = Array.isArray(j.salaryRange) && j.salaryRange.length > 0 ? j.salaryRange.join('、') : '未設定';
+                const agesHtml = Array.isArray(j.targetAge) && j.targetAge.length > 0
+                  ? j.targetAge.map(a => `<span class="table-pill-tag">${this.escapeHtml(a)}</span>`).join('')
+                  : '<span style="color:var(--text-muted); font-size:11.5px;">未設定</span>';
+
+                const roleHtml = j.role
+                  ? `<span class="table-pill-tag table-pill-tag-gold">${this.escapeHtml(j.role)}</span>`
+                  : '<span style="color:var(--text-muted); font-size:11.5px;">未設定</span>';
+
+                const salariesHtml = Array.isArray(j.salaryRange) && j.salaryRange.length > 0
+                  ? j.salaryRange.map(s => `<span class="table-pill-tag">${this.escapeHtml(s)}</span>`).join('')
+                  : '<span style="color:var(--text-muted); font-size:11.5px;">未設定</span>';
+
                 const rankHtml = this.renderPriorityRankBadge(j.priorityRank, this.isAdminMode, j.companyId);
 
                 return `
                   <tr>
                     <td>
-                      <strong>${this.escapeHtml(j.companyName)}</strong>
+                      <strong style="color: var(--color-navy-main); font-size: 13.5px;">${this.escapeHtml(j.companyName)}</strong>
                       ${j.companyNameKana ? `<br><span style="font-size:10.5px; color:var(--text-muted);">${this.escapeHtml(j.companyNameKana)}</span>` : ''}
                     </td>
-                    <td>${rankHtml}</td>
-                    <td><strong>${this.escapeHtml(j.jobTitle)}</strong></td>
-                    <td>${j.industry || '未設定'}</td>
-                    <td>${j.position || '未設定'}</td>
-                    <td><span class="badge badge-navy">${j.status}</span></td>
-                    <td><span style="font-size:11.5px; color:var(--text-secondary);">${agesStr}</span></td>
-                    <td><span style="font-size:11.5px; color:var(--text-secondary);">${roleStr}</span></td>
-                    <td><span style="font-size:11.5px; color:var(--text-secondary);">${salariesStr}</span></td>
-                    <td>
-                      <div style="display:flex; gap:4px; flex-wrap:wrap;">
-                        <button class="btn btn-secondary btn-sm btn-add-to-myjob" data-job-id="${j.jobId}">担当追加</button>
+                    <td style="text-align: center;">${rankHtml}</td>
+                    <td><strong style="font-size: 13px; color: var(--text-primary);">${this.escapeHtml(j.jobTitle)}</strong></td>
+                    <td><span style="font-size:12px;">${j.industry ? this.escapeHtml(j.industry) : '<span style="color:var(--text-muted);">未設定</span>'}</span></td>
+                    <td><span style="font-size:12px;">${j.position ? this.escapeHtml(j.position) : '<span style="color:var(--text-muted);">未設定</span>'}</span></td>
+                    <td style="text-align: center;">
+                      <span class="badge ${j.status === 'スカウト実施中' ? 'badge-success' : j.status === '準備中' ? 'badge-gold' : 'badge-gray'}" style="white-space: nowrap; font-size: 11.5px; padding: 4px 10px;">${j.status}</span>
+                    </td>
+                    <td><div>${agesHtml}</div></td>
+                    <td><div>${roleHtml}</div></td>
+                    <td><div>${salariesHtml}</div></td>
+                    <td style="text-align: center;">
+                      <div style="display:flex; gap:4px; justify-content: center; flex-wrap:wrap;">
+                        <button class="btn btn-secondary btn-sm btn-add-to-myjob" data-job-id="${j.jobId}" style="white-space:nowrap;">担当追加</button>
                         ${this.isAdminMode ? `
                           <button class="btn btn-secondary btn-sm btn-edit-job" data-job-id="${j.jobId}">編集</button>
                           <button class="btn btn-danger btn-sm btn-delete-job" data-job-id="${j.jobId}">削除</button>
