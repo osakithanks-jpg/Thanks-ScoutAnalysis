@@ -2910,24 +2910,12 @@ class AppController {
   }
 
   switchView(viewName) {
-    console.log("ADMIN_NAV_CLICKED", {
-      currentPage: this.currentView,
-      targetView: viewName,
-      currentRoute: window.location.pathname
-    });
-
     if (viewName === 'data-management' && !this.isAdminMode) {
       this.openAdminPasswordModal();
       return;
     }
 
     this.currentView = viewName;
-
-    console.log("ADMIN_NAVIGATION_UPDATED", {
-      nextPage: viewName,
-      currentPage: this.currentView,
-      currentRoute: window.location.pathname
-    });
 
     document.querySelectorAll('.nav-item').forEach(el => {
       if (el.getAttribute('data-view') === viewName) {
@@ -5773,23 +5761,20 @@ class AppController {
         </p>
 
         <table class="data-table">
-          <thead><tr><th>日時</th><th>求人名</th><th>種別</th><th>タイトル / ID</th><th>記録者</th><th>タグ</th><th>操作</th></tr></thead>
+          <thead><tr><th>日時</th><th>求人名</th><th>種別</th><th>タイトル</th><th>記録者</th><th>タグ</th><th>操作</th></tr></thead>
           <tbody>
             ${list.length === 0 ? `
               <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:24px;">登録されたナレッジ・振り返りはまだありません。</td></tr>
             ` : list.map((k, index) => {
               const job = jobsMap.get(k.jobId) || {};
               const itemId = k.knowledgeId || k.id || `KNW-${index}`;
-              const itemType = k.type || 'knowledge';
+              const itemType = k.type || 'その他';
               return `
                 <tr class="clickable-knw-row" data-knw-id="${itemId}" data-knw-index="${index}" style="cursor:pointer;">
                   <td>${k.createdAt ? k.createdAt.slice(0,10) : '-'}</td>
                   <td><strong>${this.escapeHtml(job.companyName || '')}</strong><br><span style="font-size:11px;">${this.escapeHtml(job.jobTitle || '')}</span></td>
                   <td><span class="badge badge-gold">${this.escapeHtml(itemType)}</span></td>
-                  <td>
-                    <strong>${this.escapeHtml(k.title || '無題')}</strong><br>
-                    <span style="font-size:10px; color:var(--text-muted);">ID: ${this.escapeHtml(itemId)} | TYPE: ${this.escapeHtml(itemType)}</span>
-                  </td>
+                  <td><strong>${this.escapeHtml(k.title || '無題')}</strong></td>
                   <td>${usersMap.get(k.staffId) || k.staffId || '-'}</td>
                   <td>${(k.tags || []).map(t => `<span class="badge badge-navy">${t}</span>`).join(' ')}</td>
                   <td>
@@ -5821,14 +5806,6 @@ class AppController {
           knw = list[knwIdx];
         }
 
-        console.log('KNOWLEDGE_CARD_CLICKED', {
-          clickedId: knwId,
-          clickedType: knw ? knw.type : 'unknown',
-          clickedData: knw,
-          currentRoute: 'knowledge',
-          componentName: 'renderKnowledgeView'
-        });
-
         if (knw) {
           this.openKnowledgeDetailModal(knw);
         } else {
@@ -5845,11 +5822,6 @@ class AppController {
     const user = StorageService.getUserById(k.staffId);
     const staffName = user ? user.name : (k.staffId || '指定なし');
     const targetKnwId = k.knowledgeId || k.id;
-
-    console.log('DETAIL_OPEN_HANDLER_CALLED', {
-      selectedId: targetKnwId,
-      selectedData: k
-    });
 
     const html = `
       <div class="modal-overlay" style="position: fixed; inset: 0; z-index: 99999; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
@@ -6157,8 +6129,6 @@ class AppController {
   // 7. データ管理画面 (管理者モード)
   // =========================================================================
   renderDataManagementView(container) {
-    console.log("ADMIN_COMPONENT_RENDERED");
-
     if (!this.isAdminMode) {
       container.innerHTML = `
         <div class="card" style="padding: 32px; text-align: center;">
@@ -6181,10 +6151,6 @@ class AppController {
     };
 
     container.innerHTML = `
-      <!-- 管理者画面アクティブ確認用テストバナー -->
-      <div style="background:#000000; color:#00FF66; padding:10px; font-weight:bold; font-size:14px; margin-bottom:16px; border-radius:4px; text-align:center; border:1px solid #00FF66;">
-        ADMIN SCREEN ACTIVE
-      </div>
       <!-- CSV出力 -->
       <div class="card" style="margin-bottom: 20px;">
         <h3 class="card-title"><i data-lucide="download"></i> 1. CSVエクスポート</h3>
