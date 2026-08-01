@@ -85,10 +85,23 @@ class AppController {
     return `${year}-${month}-${day}`;
   }
 
-  init() {
-    StorageService.initStorage();
+  async init() {
     this.bindEvents();
 
+    // 1. クラウド(Firestore)からの最新全データ最優先読み込み (Single Source of Truth)
+    try {
+      await StorageService.loadFromFirestoreFirst();
+    } catch (err) {
+      console.error('[Firestore Initial Load Error]', err);
+    } finally {
+      const loader = document.getElementById('app-loading-screen');
+      if (loader) {
+        loader.style.opacity = '0';
+        setTimeout(() => loader.remove(), 300);
+      }
+    }
+
+    // 2. スタッフ状態の確認と表示
     const staffId = StorageService.getCurrentStaffId();
     const user = StorageService.getUserById(staffId);
 
@@ -99,6 +112,9 @@ class AppController {
       this.updateHeaderStaffDisplay();
       this.renderCurrentView();
     }
+
+    // 3. onSnapshotによるリアルタイム監視接続開始
+    StorageService.attachFirestoreRealtimeListener();
   }
 
   bindEvents() {

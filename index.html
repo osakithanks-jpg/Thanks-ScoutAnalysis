@@ -41,6 +41,13 @@
   </script>
 </head>
 <body>
+  <!-- クラウドデータ初回同期用ローディング画面 (Single Source of Truth) -->
+  <div id="app-loading-screen">
+    <div class="spinner"></div>
+    <div style="font-size:16px; font-weight:700; color:#C5A059; margin-bottom:6px;">サンクスパートナーズ スカウト・求人一元管理</div>
+    <div style="font-size:13px; color:#9CA3AF;">クラウド(Firestore: project-5bedb)から最新データを同期しています...</div>
+  </div>
+
   <div id="app-layout">
     <!-- 管理者モード領域 (管理者時のみ表示) -->
     <div id="admin-banner-container" style="display: none;" class="admin-banner">

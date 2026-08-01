@@ -18,9 +18,9 @@ import {
 
 export class StorageService {
   /**
-   * システム初期設定（空の場合は基本マスタ・企業マスタへの移行を初期化）
+   * システム初期設定 (クラウド優先読み込み後のローカル補完用)
    */
-  static initStorage() {
+  static initStorageFallbackOnly() {
     if (!localStorage.getItem(KEYS.MEDIA)) {
       localStorage.setItem(KEYS.MEDIA, JSON.stringify(DEFAULT_MEDIA_LIST));
     }
@@ -45,41 +45,126 @@ export class StorageService {
       localStorage.setItem(KEYS.SETTINGS, JSON.stringify({ lastUpdated: new Date().toISOString() }));
     }
 
-    // 企業マスタ (companies) の自動初期化 & 既存求人からの自動移行
     this.migrateCompaniesFromJobs();
-
-    // Firebase Cloud Firestore リアルタイム全端末自動同期
-    this.initFirestoreSync();
   }
 
-  static initFirestoreSync() {
-    if (window.firestoreDb && !this._firestoreListenerAttached) {
-      this._firestoreListenerAttached = true;
-      try {
-        window.firestoreDb.collection('scout_app_store').onSnapshot(snapshot => {
-          let hasChange = false;
+  /**
+   * 1. 起動時にCloud Firestoreから最新データを最優先読み込み (Single Source of Truth)
+   */
+  static async loadFromFirestoreFirst() {
+    const projectId = (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.projectId) || 'project-5bedb';
+    const collectionName = 'scout_app_store';
+
+    if (!window.firestoreDb) {
+      console.warn(`[Firestore Sync Warning] Project ID: ${projectId} | window.firestoreDb is not initialized. Using local storage fallback.`);
+      this.initStorageFallbackOnly();
+      return false;
+    }
+
+    try {
+      console.log(`[Firestore Connection Check] Connecting to Project ID: ${projectId} | Collection: ${collectionName}...`);
+      const snapshot = await window.firestoreDb.collection(collectionName).get();
+      const docsCount = snapshot.docs.length;
+      const nowTs = new Date().toLocaleTimeString('ja-JP');
+
+      console.log(`[Firestore Sync Success] Connected Project ID: ${projectId}`);
+      console.log(`[Firestore Sync Success] Monitored Collection: ${collectionName}`);
+      console.log(`[Firestore Sync Success] Loaded Document Count: ${docsCount}`);
+      console.log(`[Firestore Sync Success] Last Updated Timestamp: ${nowTs}`);
+
+      if (docsCount > 0) {
+        // クラウド(Firestore)の全データを優先的に localStorage に適用
+        snapshot.docs.forEach(doc => {
+          const key = doc.id;
+          const docData = doc.data();
+          if (docData && typeof docData.jsonStr === 'string') {
+            localStorage.setItem(key, docData.jsonStr);
+          }
+        });
+      } else {
+        // クラウドが完全な0件の初期状態のみ、初期マスタを作成してFirestoreへ保存
+        console.log(`[Firestore Init] Collection ${collectionName} is empty. Seeding initial default master into Firestore...`);
+        this.initStorageFallbackOnly();
+        this.syncAllLocalStorageToFirestore();
+      }
+      return true;
+    } catch (err) {
+      console.error(`[Firestore Sync ERROR] Project ID: ${projectId} | Collection: ${collectionName} | Error Code: ${err.code || 'UNKNOWN'} | Message: ${err.message}`, err);
+      alert(`[Firestore通信エラー] クラウドデータの取得に失敗しました (${err.code || 'ERR'}): ${err.message}`);
+      this.initStorageFallbackOnly();
+      return false;
+    }
+  }
+
+  static syncAllLocalStorageToFirestore() {
+    if (!window.firestoreDb) return;
+    const collectionName = 'scout_app_store';
+    Object.values(KEYS).forEach(key => {
+      const val = localStorage.getItem(key);
+      if (val !== null) {
+        window.firestoreDb.collection(collectionName).doc(key).set({
+          jsonStr: val,
+          updatedAt: new Date().toISOString(),
+          updatedByStaffId: this.getCurrentStaffId() || 'SYSTEM_INIT'
+        }).catch(err => {
+          console.error(`[Firestore Sync Fail] Key: ${key} | Code: ${err.code} | Message: ${err.message}`, err);
+        });
+      }
+    });
+  }
+
+  /**
+   * 2. onSnapshotによるリアルタイム変更監視
+   */
+  static attachFirestoreRealtimeListener() {
+    const projectId = (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.projectId) || 'project-5bedb';
+    const collectionName = 'scout_app_store';
+
+    if (!window.firestoreDb || this._firestoreListenerAttached) return;
+    this._firestoreListenerAttached = true;
+
+    try {
+      window.firestoreDb.collection(collectionName).onSnapshot(
+        snapshot => {
+          const nowTs = new Date().toLocaleTimeString('ja-JP');
+          let hasRemoteChanges = false;
+
+          console.log(`[Firestore onSnapshot] Connected Project: ${projectId} | Collection: ${collectionName} | Docs Count: ${snapshot.docs.length} | Last Updated: ${nowTs}`);
+
           snapshot.docChanges().forEach(change => {
             if (change.type === 'added' || change.type === 'modified') {
               const key = change.doc.id;
               const docData = change.doc.data();
               if (docData && typeof docData.jsonStr === 'string') {
-                const currentVal = localStorage.getItem(key);
-                if (currentVal !== docData.jsonStr) {
+                const currentLocal = localStorage.getItem(key);
+                if (currentLocal !== docData.jsonStr) {
                   localStorage.setItem(key, docData.jsonStr);
-                  hasChange = true;
+                  hasRemoteChanges = true;
+                  console.log(`[Firestore Remote Update] Key: ${key} synced from Cloud Firestore.`);
                 }
               }
+            } else if (change.type === 'removed') {
+              const key = change.doc.id;
+              localStorage.removeItem(key);
+              hasRemoteChanges = true;
+              console.log(`[Firestore Remote Remove] Key: ${key} removed from Cloud Firestore.`);
             }
           });
-          if (hasChange && window.app && typeof window.app.renderCurrentView === 'function') {
-            window.app.renderCurrentView();
+
+          if (hasRemoteChanges && !snapshot.metadata.hasPendingWrites) {
+            if (window.app && typeof window.app.renderCurrentView === 'function') {
+              console.log('[Firestore UI Refresh] Re-rendering current view with updated cloud data...');
+              window.app.renderCurrentView();
+            }
           }
-        }, err => {
-          console.warn('Firestore realtime sync warning:', err);
-        });
-      } catch (err) {
-        console.warn('Firestore snapshot setup warning:', err);
-      }
+        },
+        err => {
+          console.error(`[Firestore onSnapshot Error] Project: ${projectId} | Collection: ${collectionName} | Error Code: ${err.code} | Message: ${err.message}`, err);
+          alert(`[Firestoreリアルタイム監視エラー] (${err.code}): ${err.message}`);
+        }
+      );
+    } catch (err) {
+      console.error('[Firestore Listener Setup Error]', err);
     }
   }
 
@@ -162,7 +247,6 @@ export class StorageService {
 
   // --- 汎用ヘルパー ---
   static get(key) {
-    this.initStorage();
     try {
       return JSON.parse(localStorage.getItem(key) || '[]');
     } catch (e) {
@@ -172,19 +256,22 @@ export class StorageService {
   }
 
   static set(key, data) {
+    const projectId = (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.projectId) || 'project-5bedb';
+    const collectionName = 'scout_app_store';
     const jsonStr = JSON.stringify(data);
     localStorage.setItem(key, jsonStr);
+
     if (window.firestoreDb) {
-      try {
-        window.firestoreDb.collection('scout_app_store').doc(key).set({
-          jsonStr: jsonStr,
-          updatedAt: new Date().toISOString()
-        }).catch(err => {
-          console.warn('Firestore sync write warning:', err);
-        });
-      } catch (err) {
-        console.warn('Firestore sync write exception:', err);
-      }
+      window.firestoreDb.collection(collectionName).doc(key).set({
+        jsonStr: jsonStr,
+        updatedAt: new Date().toISOString(),
+        updatedByStaffId: this.getCurrentStaffId() || 'SYSTEM'
+      }).then(() => {
+        console.log(`[Firestore Write Success] Key: ${key} | Collection: ${collectionName} | Project: ${projectId} | Last Updated: ${new Date().toLocaleTimeString('ja-JP')}`);
+      }).catch(err => {
+        console.error(`[Firestore Write ERROR] Key: ${key} | Collection: ${collectionName} | Project: ${projectId} | Error Code: ${err.code || 'UNKNOWN'} | Message: ${err.message}`, err);
+        alert(`[Cloud Firestore保存エラー] ${key} のクラウド同期に失敗しました (${err.code || 'ERR'}): ${err.message}`);
+      });
     }
   }
 
