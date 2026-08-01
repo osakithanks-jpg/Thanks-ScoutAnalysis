@@ -298,35 +298,6 @@ class StorageService {
     localStorage.setItem(key, JSON.stringify(data));
   }
 
-  // --- 変更履歴 (Change Logs) ---
-  static getChangeLogs() {
-    return this.get(KEYS.CHANGE_LOGS);
-  }
-
-  static addChangeLog(logData) {
-    try {
-      const logs = this.getChangeLogs();
-      const now = new Date().toISOString();
-      const newLog = {
-        logId: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        actionType: logData.actionType || 'update',
-        targetType: logData.targetType || 'unknown',
-        targetId: logData.targetId || '',
-        beforeData: logData.beforeData !== undefined ? logData.beforeData : null,
-        afterData: logData.afterData !== undefined ? logData.afterData : null,
-        staffId: logData.staffId || logData.operatorId || '',
-        notes: logData.notes || '',
-        createdAt: now
-      };
-      logs.push(newLog);
-      this.set(KEYS.CHANGE_LOGS, logs);
-      return newLog;
-    } catch (err) {
-      console.warn('変更履歴の保存処理失敗（本体データ保存には影響しません）:', err);
-      return null;
-    }
-  }
-
   // --- 現在選択中担当者 ---
   static getCurrentStaffId() {
     return localStorage.getItem(KEYS.CURRENT_STAFF_ID) || '';
@@ -338,7 +309,16 @@ class StorageService {
 
   // --- 担当者 (Users) ---
   static getUsers() {
-    const list = this.get(KEYS.USERS);
+    let list = this.get(KEYS.USERS);
+    if (!Array.isArray(list) || list.length === 0) {
+      const defaultUsers = [
+        { staffId: 'STF-001', name: '尾﨑優理', status: 'active', adminRole: 'admin', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { staffId: 'STF-002', name: '山田太郎', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { staffId: 'STF-003', name: '佐藤花子', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      ];
+      this.set(KEYS.USERS, defaultUsers);
+      list = defaultUsers;
+    }
     return list.map(u => ({
       staffId: u.staffId,
       name: u.name || '',
@@ -666,21 +646,15 @@ class StorageService {
 
     this.set(KEYS.JOBS, jobs);
 
-    try {
-      this.addChangeLog({
-        targetType: 'jobs',
-        targetId: savedJob.jobId,
-        actionType: isEdit ? '求人情報編集' : '求人新規登録',
-        beforeData,
-        afterData: savedJob,
-        staffId: operatorStaffId,
-        notes: `求人「${savedJob.companyName} / ${savedJob.jobTitle}」の${isEdit ? '情報編集' : '新規登録'}`
-      });
-      savedJob._logSuccess = true;
-    } catch (logErr) {
-      console.warn('求人データは正常保存されましたが、変更履歴の記録中にエラーが発生しました:', logErr);
-      savedJob._logSuccess = false;
-    }
+    this.addChangeLog({
+      targetType: 'jobs',
+      targetId: savedJob.jobId,
+      actionType: isEdit ? 'update' : 'create',
+      beforeData,
+      afterData: savedJob,
+      staffId: operatorStaffId,
+      notes: `求人「${savedJob.companyName} / ${savedJob.jobTitle}」の${isEdit ? '情報編集' : '新規登録'}`
+    });
 
     return savedJob;
   }
@@ -1929,7 +1903,12 @@ class StorageService {
     const opts = { ...defaultOptions, ...options };
 
     if (!opts.keepUsers) {
-      this.set(KEYS.USERS, []);
+      const defaultUsers = [
+        { staffId: 'STF-001', name: '尾﨑優理', status: 'active', adminRole: 'admin', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { staffId: 'STF-002', name: '山田太郎', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { staffId: 'STF-003', name: '佐藤花子', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      ];
+      this.set(KEYS.USERS, defaultUsers);
       this.set(KEYS.AUTO_SCOUT_PERMISSIONS, []);
     }
     if (!opts.keepMedia) this.set(KEYS.MEDIA, DEFAULT_MEDIA_LIST);
@@ -2889,38 +2868,6 @@ class AppController {
     }
   }
 
-  showToast(message, type = 'success') {
-    let toast = document.getElementById('global-toast-notification');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.id = 'global-toast-notification';
-      toast.style.cssText = 'position:fixed; top:20px; right:20px; z-index:9999; padding:12px 20px; border-radius:6px; font-weight:700; font-size:13.5px; box-shadow:0 4px 14px rgba(0,0,0,0.18); transition:all 0.3s ease; display:flex; align-items:center; gap:8px;';
-      document.body.appendChild(toast);
-    }
-
-    if (type === 'success') {
-      toast.style.background = 'var(--color-navy-main)';
-      toast.style.color = '#FFFFFF';
-      toast.style.border = '1px solid var(--color-gold-accent)';
-      toast.innerHTML = `<i data-lucide="check-circle" style="color:var(--color-gold-accent);"></i> ${this.escapeHtml(message)}`;
-    } else {
-      toast.style.background = '#C53030';
-      toast.style.color = '#FFFFFF';
-      toast.style.border = '1px solid #FEB2B2';
-      toast.innerHTML = `<i data-lucide="alert-circle"></i> ${this.escapeHtml(message)}`;
-    }
-
-    if (window.lucide) window.lucide.createIcons();
-
-    toast.style.opacity = '1';
-    toast.style.transform = 'translateY(0)';
-
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateY(-10px)';
-    }, 3200);
-  }
-
   /**
    * 注力ランクバッジのレンダリング（通常表示 / 管理者編集可）
    */
@@ -3850,112 +3797,6 @@ class AppController {
             }
           });
         }
-      }
-    }, 50);
-  }
-
-  renderDashTrends(container, manualResults) {
-    const dowStats = AnalyticsService.aggregateByDayOfWeek(manualResults);
-
-    const periodKey = this.dashboardPeriodKey || 'week';
-    const range = AnalyticsService.getPeriodRange(periodKey);
-    const dateMap = new Map();
-
-    const curr = new Date(range.startStr + 'T00:00:00+09:00');
-    const end = new Date(range.endStr + 'T00:00:00+09:00');
-    while (curr <= end) {
-      const dStr = curr.toISOString().slice(0, 10);
-      dateMap.set(dStr, { sent: 0, totalReply: 0, effectiveReply: 0 });
-      curr.setDate(curr.getDate() + 1);
-    }
-
-    manualResults.forEach(r => {
-      if (dateMap.has(r.date)) {
-        const item = dateMap.get(r.date);
-        item.sent += Number(r.sentCount || 0);
-        item.totalReply += Number(r.totalReplyCount || 0);
-        item.effectiveReply += Number(r.effectiveReplyCount || 0);
-      }
-    });
-
-    const trendLabels = Array.from(dateMap.keys()).map(d => d.slice(5));
-    const trendSent = Array.from(dateMap.values()).map(v => v.sent);
-    const trendEff = Array.from(dateMap.values()).map(v => v.effectiveReply);
-
-    container.innerHTML = `
-      <div class="grid-2" style="margin-bottom: 16px;">
-        <div class="card">
-          <h4 class="card-title"><i data-lucide="bar-chart-2"></i> 曜日別 送信・有効返信数比較</h4>
-          <div class="chart-container" style="margin-top: 12px; height: 260px;"><canvas id="dashDowBarChart"></canvas></div>
-        </div>
-        <div class="card">
-          <h4 class="card-title"><i data-lucide="trending-up"></i> 日次送信・有効返信推移 (${range.label})</h4>
-          <div class="chart-container" style="margin-top: 12px; height: 260px;"><canvas id="dashTrendLineChart"></canvas></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h4 class="card-title"><i data-lucide="calendar"></i> 曜日別成果詳細</h4>
-        <div style="overflow-x:auto; margin-top:12px;">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>曜日</th>
-                <th style="text-align:right;">送信数</th>
-                <th style="text-align:right;">総返信数</th>
-                <th style="text-align:right;">有効返信数</th>
-                <th style="text-align:right;">参考総返信率</th>
-                <th style="text-align:right;">参考有効返信率</th>
-                <th style="text-align:right;">送信構成比</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${dowStats.map(d => `
-                <tr>
-                  <td><strong>${d.dayName}</strong></td>
-                  <td style="text-align:right;">${d.sentCount.toLocaleString()}件</td>
-                  <td style="text-align:right;">${d.totalReplyCount.toLocaleString()}件</td>
-                  <td style="text-align:right; font-weight:700; color:var(--color-gold-accent);">${d.effectiveReplyCount.toLocaleString()}件</td>
-                  <td style="text-align:right;">${d.totalReplyRateFormatted}</td>
-                  <td style="text-align:right; font-weight:600;">${d.effectiveReplyRateFormatted}</td>
-                  <td style="text-align:right;">${d.share}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-
-    setTimeout(() => {
-      const ctxDow = document.getElementById('dashDowBarChart')?.getContext('2d');
-      if (ctxDow && window.Chart) {
-        new Chart(ctxDow, {
-          type: 'bar',
-          data: {
-            labels: dowStats.map(d => d.dayName),
-            datasets: [
-              { label: '送信数', data: dowStats.map(d => d.sentCount), backgroundColor: '#1B2A4A' },
-              { label: '有効返信', data: dowStats.map(d => d.effectiveReplyCount), backgroundColor: '#C5A059' }
-            ]
-          },
-          options: { responsive: true, maintainAspectRatio: false }
-        });
-      }
-
-      const ctxTrend = document.getElementById('dashTrendLineChart')?.getContext('2d');
-      if (ctxTrend && window.Chart) {
-        new Chart(ctxTrend, {
-          type: 'line',
-          data: {
-            labels: trendLabels,
-            datasets: [
-              { label: '送信数', data: trendSent, borderColor: '#1B2A4A', backgroundColor: 'rgba(27,42,74,0.1)', fill: true, tension: 0.3 },
-              { label: '有効返信数', data: trendEff, borderColor: '#C5A059', backgroundColor: 'rgba(197,160,89,0.1)', fill: true, tension: 0.3 }
-            ]
-          },
-          options: { responsive: true, maintainAspectRatio: false }
-        });
       }
     }, 50);
   }
@@ -6680,25 +6521,13 @@ class AppController {
           salaryRange
         }, this.currentStaff ? this.currentStaff.staffId : '');
 
-        // 画面を閉じてフォームを初期化
+        alert(isEdit ? '求人情報を更新（保存）しました。' : '新しい求人を正常に登録（追加）しました。');
         closeModal();
 
-        // 成功フィードバック表示 (指示通りの文言)
-        if (savedJob && savedJob._logSuccess === false) {
-          this.showToast('求人は登録されましたが、変更履歴の保存に失敗しました。', 'warning');
-        } else {
-          const successText = isEdit ? '求人情報を更新しました' : '求人を登録しました';
-          this.showToast(successText, 'success');
-        }
-
-        // 求人一覧を再取得・即時更新し新登録求人を即時反映
-        if (this.currentView === 'jobs') {
-          this.renderCurrentView();
-        } else {
-          this.switchView('jobs');
-        }
+        // 即時（リアルタイム）画面反映
+        this.renderCurrentView();
       } catch (err) {
-        this.showToast(`登録エラー: ${err.message}`, 'error');
+        alert(`登録エラー: ${err.message}`);
         submitBtn.disabled = false;
         submitBtn.textContent = isEdit ? '変更内容を保存する' : '求人を登録する';
       }
@@ -6842,8 +6671,8 @@ class AppController {
           if (window.lucide) window.lucide.createIcons();
         }
 
-        this.showToast('管理者モードを開始しました。', 'success');
-        this.switchView('data-management');
+        alert('管理者モードを開始しました。');
+        this.renderCurrentView();
       } else {
         mContainer.querySelector('#admin-pass-error').style.display = 'block';
       }

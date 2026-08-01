@@ -152,7 +152,16 @@ export class StorageService {
 
   // --- 担当者 (Users) ---
   static getUsers() {
-    const list = this.get(KEYS.USERS);
+    let list = this.get(KEYS.USERS);
+    if (!Array.isArray(list) || list.length === 0) {
+      const defaultUsers = [
+        { staffId: 'STF-001', name: '尾﨑優理', status: 'active', adminRole: 'admin', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { staffId: 'STF-002', name: '山田太郎', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { staffId: 'STF-003', name: '佐藤花子', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      ];
+      this.set(KEYS.USERS, defaultUsers);
+      list = defaultUsers;
+    }
     return list.map(u => ({
       staffId: u.staffId,
       name: u.name || '',
@@ -1737,7 +1746,12 @@ export class StorageService {
     const opts = { ...defaultOptions, ...options };
 
     if (!opts.keepUsers) {
-      this.set(KEYS.USERS, []);
+      const defaultUsers = [
+        { staffId: 'STF-001', name: '尾﨑優理', status: 'active', adminRole: 'admin', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { staffId: 'STF-002', name: '山田太郎', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { staffId: 'STF-003', name: '佐藤花子', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      ];
+      this.set(KEYS.USERS, defaultUsers);
       this.set(KEYS.AUTO_SCOUT_PERMISSIONS, []);
     }
     if (!opts.keepMedia) this.set(KEYS.MEDIA, DEFAULT_MEDIA_LIST);
