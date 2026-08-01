@@ -1452,7 +1452,8 @@ class StorageService {
   static saveKnowledge(knw, operatorStaffId = '') {
     const list = this.get(KEYS.KNOWLEDGE);
     const now = new Date().toISOString();
-    const idx = list.findIndex(k => k.knowledgeId === knw.knowledgeId);
+    const targetId = knw.knowledgeId || knw.id;
+    const idx = targetId ? list.findIndex(k => (k.knowledgeId && k.knowledgeId === targetId) || (k.id && k.id === targetId)) : -1;
     let saved;
 
     if (idx >= 0) {
@@ -1460,7 +1461,7 @@ class StorageService {
       list[idx] = saved;
     } else {
       saved = {
-        knowledgeId: knw.knowledgeId || `KNW-${Date.now()}`,
+        knowledgeId: targetId || `KNW-${Date.now()}`,
         staffId: operatorStaffId,
         isArchived: false,
         createdAt: now,
@@ -1471,6 +1472,17 @@ class StorageService {
     }
     this.set(KEYS.KNOWLEDGE, list);
     return saved;
+  }
+
+  static deleteKnowledge(knowledgeId, operatorStaffId = '') {
+    const list = this.get(KEYS.KNOWLEDGE);
+    const idx = list.findIndex(k => (k.knowledgeId && String(k.knowledgeId) === String(knowledgeId)) || (k.id && String(k.id) === String(knowledgeId)));
+    if (idx >= 0) {
+      list[idx].isArchived = true;
+      list[idx].updatedAt = new Date().toISOString();
+      list[idx].updatedBy = operatorStaffId;
+      this.set(KEYS.KNOWLEDGE, list);
+    }
   }
 
   // --- スカウト文面 ---
