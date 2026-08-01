@@ -3002,19 +3002,23 @@ class AppController {
         </p>
 
         <table class="data-table">
-          <thead><tr><th>日時</th><th>求人名</th><th>種別</th><th>タイトル</th><th>記録者</th><th>タグ</th><th>操作</th></tr></thead>
+          <thead><tr><th>日時</th><th>求人名</th><th>種別</th><th>タイトル / ID</th><th>記録者</th><th>タグ</th><th>操作</th></tr></thead>
           <tbody>
             ${list.length === 0 ? `
               <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:24px;">登録されたナレッジ・振り返りはまだありません。</td></tr>
             ` : list.map((k, index) => {
               const job = jobsMap.get(k.jobId) || {};
               const itemId = k.knowledgeId || k.id || `KNW-${index}`;
+              const itemType = k.type || 'knowledge';
               return `
                 <tr class="clickable-knw-row" data-knw-id="${itemId}" data-knw-index="${index}" style="cursor:pointer;">
                   <td>${k.createdAt ? k.createdAt.slice(0,10) : '-'}</td>
                   <td><strong>${this.escapeHtml(job.companyName || '')}</strong><br><span style="font-size:11px;">${this.escapeHtml(job.jobTitle || '')}</span></td>
-                  <td><span class="badge badge-gold">${k.type || 'その他'}</span></td>
-                  <td><strong>${this.escapeHtml(k.title || '無題')}</strong></td>
+                  <td><span class="badge badge-gold">${this.escapeHtml(itemType)}</span></td>
+                  <td>
+                    <strong>${this.escapeHtml(k.title || '無題')}</strong><br>
+                    <span style="font-size:10px; color:var(--text-muted);">ID: ${this.escapeHtml(itemId)} | TYPE: ${this.escapeHtml(itemType)}</span>
+                  </td>
                   <td>${usersMap.get(k.staffId) || k.staffId || '-'}</td>
                   <td>${(k.tags || []).map(t => `<span class="badge badge-navy">${t}</span>`).join(' ')}</td>
                   <td>
@@ -3045,6 +3049,15 @@ class AppController {
         if (!knw && !isNaN(knwIdx) && list[knwIdx]) {
           knw = list[knwIdx];
         }
+
+        console.log('KNOWLEDGE_CARD_CLICKED', {
+          clickedId: knwId,
+          clickedType: knw ? knw.type : 'unknown',
+          clickedData: knw,
+          currentRoute: 'knowledge',
+          componentName: 'renderKnowledgeView'
+        });
+
         if (knw) {
           this.openKnowledgeDetailModal(knw);
         } else {
@@ -3062,9 +3075,14 @@ class AppController {
     const staffName = user ? user.name : (k.staffId || '指定なし');
     const targetKnwId = k.knowledgeId || k.id;
 
+    console.log('DETAIL_OPEN_HANDLER_CALLED', {
+      selectedId: targetKnwId,
+      selectedData: k
+    });
+
     const html = `
-      <div class="modal-overlay">
-        <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-overlay" style="position: fixed; inset: 0; z-index: 99999; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6);">
+        <div class="modal-card" style="max-width: 680px; max-height: 90vh; overflow-y: auto;">
           <div class="modal-header">
             <div style="display:flex; align-items:center; gap:8px;">
               <span class="badge badge-gold" style="font-size:12px;">${k.type || 'ナレッジ'}</span>
@@ -3106,6 +3124,11 @@ class AppController {
     const mContainer = document.getElementById('modal-container');
     mContainer.innerHTML = html;
     if (window.lucide) window.lucide.createIcons();
+
+    console.log('DETAIL_MODAL_RENDERED', {
+      isOpen: true,
+      selectedItem: k
+    });
 
     const closeModal = () => mContainer.innerHTML = '';
     mContainer.querySelector('.modal-close').onclick = closeModal;
