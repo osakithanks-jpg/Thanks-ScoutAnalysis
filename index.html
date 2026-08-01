@@ -16,6 +16,29 @@
   <!-- Chart.js & Lucide Icons -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Firebase Cloud Firestore (リアルタイム全端末自動同期用) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script>
+    window.FIREBASE_CONFIG = {
+      apiKey: "AIzaSyA4d8HdvrKFRgYOm2my1DmvIJDuBPPLmfI",
+      authDomain: "project-5bedb.firebaseapp.com",
+      projectId: "project-5bedb",
+      storageBucket: "project-5bedb.firebasestorage.app",
+      messagingSenderId: "63610658877",
+      appId: "1:63610658877:web:c97f9a1625ee0fd8570a54"
+    };
+    if (window.firebase && !firebase.apps.length) {
+      try {
+        firebase.initializeApp(window.FIREBASE_CONFIG);
+        window.firestoreDb = firebase.firestore();
+        console.log('Firebase Cloud Firestore successfully connected for multi-device realtime sync!');
+      } catch (e) {
+        console.warn('Firebase init warning:', e);
+      }
+    }
+  </script>
 </head>
 <body>
   <div id="app-layout">

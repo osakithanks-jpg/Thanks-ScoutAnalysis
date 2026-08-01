@@ -204,6 +204,40 @@ class StorageService {
 
     // 企業マスタ (companies) の自動初期化 & 既存求人からの自動移行
     this.migrateCompaniesFromJobs();
+
+    // Firebase Cloud Firestore リアルタイム全端末自動同期
+    this.initFirestoreSync();
+  }
+
+  static initFirestoreSync() {
+    if (window.firestoreDb && !this._firestoreListenerAttached) {
+      this._firestoreListenerAttached = true;
+      try {
+        window.firestoreDb.collection('scout_app_store').onSnapshot(snapshot => {
+          let hasChange = false;
+          snapshot.docChanges().forEach(change => {
+            if (change.type === 'added' || change.type === 'modified') {
+              const key = change.doc.id;
+              const docData = change.doc.data();
+              if (docData && typeof docData.jsonStr === 'string') {
+                const currentVal = localStorage.getItem(key);
+                if (currentVal !== docData.jsonStr) {
+                  localStorage.setItem(key, docData.jsonStr);
+                  hasChange = true;
+                }
+              }
+            }
+          });
+          if (hasChange && window.app && typeof window.app.renderCurrentView === 'function') {
+            window.app.renderCurrentView();
+          }
+        }, err => {
+          console.warn('Firestore realtime sync warning:', err);
+        });
+      } catch (err) {
+        console.warn('Firestore snapshot setup warning:', err);
+      }
+    }
   }
 
   /**
@@ -295,7 +329,20 @@ class StorageService {
   }
 
   static set(key, data) {
-    localStorage.setItem(key, JSON.stringify(data));
+    const jsonStr = JSON.stringify(data);
+    localStorage.setItem(key, jsonStr);
+    if (window.firestoreDb) {
+      try {
+        window.firestoreDb.collection('scout_app_store').doc(key).set({
+          jsonStr: jsonStr,
+          updatedAt: new Date().toISOString()
+        }).catch(err => {
+          console.warn('Firestore sync write warning:', err);
+        });
+      } catch (err) {
+        console.warn('Firestore sync write exception:', err);
+      }
+    }
   }
 
   // --- 現在選択中担当者 ---
