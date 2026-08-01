@@ -2907,12 +2907,25 @@ class AppController {
   }
 
   switchView(viewName) {
+    console.log("ADMIN_NAV_CLICKED", {
+      currentPage: this.currentView,
+      targetView: viewName,
+      currentRoute: window.location.pathname
+    });
+
     if (viewName === 'data-management' && !this.isAdminMode) {
       this.openAdminPasswordModal();
       return;
     }
 
     this.currentView = viewName;
+
+    console.log("ADMIN_NAVIGATION_UPDATED", {
+      nextPage: viewName,
+      currentPage: this.currentView,
+      currentRoute: window.location.pathname
+    });
+
     document.querySelectorAll('.nav-item').forEach(el => {
       if (el.getAttribute('data-view') === viewName) {
         el.classList.add('active');
@@ -6141,6 +6154,8 @@ class AppController {
   // 7. データ管理画面 (管理者モード)
   // =========================================================================
   renderDataManagementView(container) {
+    console.log("ADMIN_COMPONENT_RENDERED");
+
     if (!this.isAdminMode) {
       container.innerHTML = `
         <div class="card" style="padding: 32px; text-align: center;">
@@ -6163,6 +6178,10 @@ class AppController {
     };
 
     container.innerHTML = `
+      <!-- 管理者画面アクティブ確認用テストバナー -->
+      <div style="background:#000000; color:#00FF66; padding:10px; font-weight:bold; font-size:14px; margin-bottom:16px; border-radius:4px; text-align:center; border:1px solid #00FF66;">
+        ADMIN SCREEN ACTIVE
+      </div>
       <!-- CSV出力 -->
       <div class="card" style="margin-bottom: 20px;">
         <h3 class="card-title"><i data-lucide="download"></i> 1. CSVエクスポート</h3>
@@ -6984,8 +7003,8 @@ class AppController {
           if (window.lucide) window.lucide.createIcons();
         }
 
-        alert('管理者モードを開始しました。');
-        this.renderCurrentView();
+        // 管理者画面へ即時コンポーネント切り替え
+        this.switchView('data-management');
       } else {
         mContainer.querySelector('#admin-pass-error').style.display = 'block';
       }
