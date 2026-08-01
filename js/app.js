@@ -3006,18 +3006,19 @@ class AppController {
           <tbody>
             ${list.length === 0 ? `
               <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:24px;">登録されたナレッジ・振り返りはまだありません。</td></tr>
-            ` : list.map(k => {
+            ` : list.map((k, index) => {
               const job = jobsMap.get(k.jobId) || {};
+              const itemId = k.knowledgeId || k.id || `KNW-${index}`;
               return `
-                <tr class="clickable-knw-row" data-knw-id="${k.knowledgeId}" style="cursor:pointer;">
+                <tr class="clickable-knw-row" data-knw-id="${itemId}" data-knw-index="${index}" style="cursor:pointer;">
                   <td>${k.createdAt ? k.createdAt.slice(0,10) : '-'}</td>
                   <td><strong>${this.escapeHtml(job.companyName || '')}</strong><br><span style="font-size:11px;">${this.escapeHtml(job.jobTitle || '')}</span></td>
                   <td><span class="badge badge-gold">${k.type || 'その他'}</span></td>
                   <td><strong>${this.escapeHtml(k.title || '無題')}</strong></td>
-                  <td>${usersMap.get(k.staffId) || k.staffId}</td>
+                  <td>${usersMap.get(k.staffId) || k.staffId || '-'}</td>
                   <td>${(k.tags || []).map(t => `<span class="badge badge-navy">${t}</span>`).join(' ')}</td>
                   <td>
-                    <button class="btn btn-secondary btn-sm btn-view-knw-detail" data-knw-id="${k.knowledgeId}">
+                    <button class="btn btn-secondary btn-sm btn-view-knw-detail" data-knw-id="${itemId}" data-knw-index="${index}">
                       <i data-lucide="eye"></i> 詳細を表示
                     </button>
                   </td>
@@ -3035,13 +3036,19 @@ class AppController {
       this.openKnowledgeEditModal(null);
     });
 
-    // 行および「詳細を表示」ボタンのクリックイベント
+    // 行および「詳細を表示」ボタンのクリックイベント (IDマッチング + インデックスフォールバック)
     container.querySelectorAll('.clickable-knw-row').forEach(row => {
       row.addEventListener('click', (e) => {
         const knwId = row.getAttribute('data-knw-id');
-        const knw = list.find(item => item.knowledgeId === knwId);
+        const knwIdx = parseInt(row.getAttribute('data-knw-index'), 10);
+        let knw = list.find(item => (item.knowledgeId && String(item.knowledgeId) === String(knwId)) || (item.id && String(item.id) === String(knwId)));
+        if (!knw && !isNaN(knwIdx) && list[knwIdx]) {
+          knw = list[knwIdx];
+        }
         if (knw) {
           this.openKnowledgeDetailModal(knw);
+        } else {
+          console.warn('[Knowledge View Warning] Could not find item for ID:', knwId, 'index:', knwIdx);
         }
       });
     });
@@ -3053,6 +3060,7 @@ class AppController {
     const job = StorageService.getJobById(k.jobId) || {};
     const user = StorageService.getUserById(k.staffId);
     const staffName = user ? user.name : (k.staffId || '指定なし');
+    const targetKnwId = k.knowledgeId || k.id;
 
     const html = `
       <div class="modal-overlay">
@@ -3111,7 +3119,7 @@ class AppController {
     mContainer.querySelector('#btn-delete-knw-detail').onclick = () => {
       if (confirm('このナレッジ・振り返りを削除しますか？')) {
         try {
-          StorageService.deleteKnowledge(k.knowledgeId, this.currentStaff ? this.currentStaff.staffId : '');
+          StorageService.deleteKnowledge(targetKnwId, this.currentStaff ? this.currentStaff.staffId : '');
           alert('削除しました。');
           closeModal();
           this.renderCurrentView();
@@ -3125,7 +3133,7 @@ class AppController {
   // ナレッジ・振り返り 新規登録 / 編集モーダル
   openKnowledgeEditModal(existingKnw = null) {
     const jobs = StorageService.getActiveJobs();
-    const isEdit = Boolean(existingKnw && existingKnw.knowledgeId);
+    const isEdit = Boolean(existingKnw && (existingKnw.knowledgeId || existingKnw.id));
 
     const html = `
       <div class="modal-overlay">
