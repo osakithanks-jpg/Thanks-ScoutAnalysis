@@ -1328,6 +1328,9 @@ export class StorageService {
     }
   }
 
+  // --- 変更履歴 ---
+  static getChangeLogs() { return this.get(KEYS.CHANGE_LOGS); }
+
   // --- スカウト文面 ---
   static getMessages() { return this.get(KEYS.MESSAGES).filter(m => !m.isArchived); }
   static getMessageVersions(messageId = '') {
