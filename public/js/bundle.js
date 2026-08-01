@@ -6305,6 +6305,22 @@ class AppController {
       reader.readAsText(file);
     });
 
+    container.querySelector('#btn-open-staff-manager')?.addEventListener('click', () => {
+      this.openStaffManagerModal();
+    });
+
+    container.querySelector('#btn-delete-demo-data')?.addEventListener('click', () => {
+      if (confirm('デモ・サンプルデータを一括削除しますか？\n（本番の実績や登録データは保護されます）')) {
+        try {
+          StorageService.deleteDemoData(this.currentStaff ? this.currentStaff.staffId : '');
+          alert('デモデータの削除が完了しました。');
+          this.renderCurrentView();
+        } catch (err) {
+          alert(`削除エラー: ${err.message}`);
+        }
+      }
+    });
+
     container.querySelector('#btn-pre-reset-backup')?.addEventListener('click', () => {
       StorageService.exportJSONBackup();
       alert('リセット前の安全バックアップを取得しました。');
