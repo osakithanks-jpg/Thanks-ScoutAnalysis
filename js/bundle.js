@@ -5737,22 +5737,33 @@ class AppController {
       <div class="card">
         <div class="card-header-flex">
           <h3 class="card-title"><i data-lucide="book-open"></i> 求人振り返り・ナレッジ一覧 (${list.length}件)</h3>
-          <button id="btn-create-knowledge" class="btn btn-gold"><i data-lucide="plus"></i> 新規ナレッジ登録</button>
+          <button id="btn-create-knowledge" class="btn btn-gold"><i data-lucide="plus"></i> 新規ナレッジ・振り返り登録</button>
         </div>
 
+        <p style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">
+          ※行または「詳細を表示」をクリックすると、振り返りの全項目参照・編集・削除が可能です。
+        </p>
+
         <table class="data-table">
-          <thead><tr><th>日時</th><th>求人名</th><th>種別</th><th>タイトル</th><th>記録者</th><th>タグ</th></tr></thead>
+          <thead><tr><th>日時</th><th>求人名</th><th>種別</th><th>タイトル</th><th>記録者</th><th>タグ</th><th>操作</th></tr></thead>
           <tbody>
-            ${list.map(k => {
+            ${list.length === 0 ? `
+              <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:24px;">登録されたナレッジ・振り返りはまだありません。</td></tr>
+            ` : list.map(k => {
               const job = jobsMap.get(k.jobId) || {};
               return `
-                <tr>
-                  <td>${k.createdAt.slice(0,10)}</td>
+                <tr class="clickable-knw-row" data-knw-id="${k.knowledgeId}" style="cursor:pointer;">
+                  <td>${k.createdAt ? k.createdAt.slice(0,10) : '-'}</td>
                   <td><strong>${this.escapeHtml(job.companyName || '')}</strong><br><span style="font-size:11px;">${this.escapeHtml(job.jobTitle || '')}</span></td>
                   <td><span class="badge badge-gold">${k.type || 'その他'}</span></td>
                   <td><strong>${this.escapeHtml(k.title || '無題')}</strong></td>
                   <td>${usersMap.get(k.staffId) || k.staffId}</td>
                   <td>${(k.tags || []).map(t => `<span class="badge badge-navy">${t}</span>`).join(' ')}</td>
+                  <td>
+                    <button class="btn btn-secondary btn-sm btn-view-knw-detail" data-knw-id="${k.knowledgeId}">
+                      <i data-lucide="eye"></i> 詳細を表示
+                    </button>
+                  </td>
                 </tr>
               `;
             }).join('')}
@@ -5761,47 +5772,67 @@ class AppController {
       </div>
     `;
 
+    if (window.lucide) window.lucide.createIcons();
+
     container.querySelector('#btn-create-knowledge')?.addEventListener('click', () => {
-      this.openKnowledgeEditModal();
+      this.openKnowledgeEditModal(null);
+    });
+
+    // 行および「詳細を表示」ボタンのクリックイベント
+    container.querySelectorAll('.clickable-knw-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        const knwId = row.getAttribute('data-knw-id');
+        const knw = list.find(item => item.knowledgeId === knwId);
+        if (knw) {
+          this.openKnowledgeDetailModal(knw);
+        }
+      });
     });
   }
 
-  openKnowledgeEditModal() {
-    const jobs = StorageService.getActiveJobs();
+  // ナレッジ・求人振り返り 詳細閲覧モーダル
+  openKnowledgeDetailModal(k) {
+    if (!k) return;
+    const job = StorageService.getJobById(k.jobId) || {};
+    const user = StorageService.getUserById(k.staffId);
+    const staffName = user ? user.name : (k.staffId || '指定なし');
+
     const html = `
       <div class="modal-overlay">
-        <div class="modal-card">
+        <div class="modal-card" style="max-width: 680px;">
           <div class="modal-header">
-            <h3 class="modal-title">新規ナレッジ登録</h3>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="badge badge-gold" style="font-size:12px;">${k.type || 'ナレッジ'}</span>
+              <h3 class="modal-title">${this.escapeHtml(k.title || '無題のナレッジ・振り返り')}</h3>
+            </div>
             <button class="modal-close">&times;</button>
           </div>
-          <div class="modal-body">
-            <div class="form-group">
-              <label class="form-label">対象求人</label>
-              <select id="knw-job-id" class="form-select">
-                ${jobs.map(j => `<option value="${j.jobId}">${j.companyName} / ${j.jobTitle}</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">ナレッジ種別</label>
-              <select id="knw-type" class="form-select">
-                ${KNOWLEDGE_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">タイトル</label>
-              <input type="text" id="knw-title" class="form-control" placeholder="件名・タイトル">
+          <div class="modal-body" style="font-size:13.5px; line-height:1.6;">
+            <!-- 基本メタ情報 -->
+            <div style="background:var(--color-gold-light); border:1px solid var(--color-gold-border); padding:12px 16px; border-radius:6px; margin-bottom:16px; display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:12.5px;">
+              <div><strong>対象求人:</strong> ${this.escapeHtml(job.companyName || '')} ${this.escapeHtml(job.jobTitle || '')}</div>
+              <div><strong>記録者:</strong> ${this.escapeHtml(staffName)}</div>
+              <div><strong>記録日時:</strong> ${k.createdAt ? k.createdAt.slice(0,10) : '-'}</div>
+              <div><strong>タグ:</strong> ${(k.tags || []).map(t => `<span class="badge badge-navy">${t}</span>`).join(' ') || 'なし'}</div>
             </div>
 
-            <div class="form-group"><label class="form-label">事実・起きたこと</label><textarea id="knw-facts" class="form-control" rows="2"></textarea></div>
-            <div class="form-group"><label class="form-label">考えられる原因</label><textarea id="knw-causes" class="form-control" rows="2"></textarea></div>
-            <div class="form-group"><label class="form-label">実施した工夫</label><textarea id="knw-efforts" class="form-control" rows="2"></textarea></div>
-            <div class="form-group"><label class="form-label">結果</label><textarea id="knw-results" class="form-control" rows="2"></textarea></div>
-            <div class="form-group"><label class="form-label">次に試すこと</label><textarea id="knw-next" class="form-control" rows="2"></textarea></div>
+            <!-- 詳細内容ブロック -->
+            ${k.facts ? `<div style="margin-bottom:14px;"><h4 style="font-size:13px; font-weight:700; color:var(--color-navy-main); margin-bottom:4px;">■ 事実・起きたこと (良かった点 / 反応)</h4><div style="background:#F8F6F2; padding:10px 14px; border-radius:4px; white-space:pre-wrap;">${this.escapeHtml(k.facts)}</div></div>` : ''}
+
+            ${k.causes ? `<div style="margin-bottom:14px;"><h4 style="font-size:13px; font-weight:700; color:var(--color-navy-main); margin-bottom:4px;">■ 考えられる原因 (反応が薄かった点)</h4><div style="background:#F8F6F2; padding:10px 14px; border-radius:4px; white-space:pre-wrap;">${this.escapeHtml(k.causes)}</div></div>` : ''}
+
+            ${k.efforts ? `<div style="margin-bottom:14px;"><h4 style="font-size:13px; font-weight:700; color:var(--color-navy-main); margin-bottom:4px;">■ 実施した工夫 (訴求・候補者像)</h4><div style="background:#F8F6F2; padding:10px 14px; border-radius:4px; white-space:pre-wrap;">${this.escapeHtml(k.efforts)}</div></div>` : ''}
+
+            ${k.results ? `<div style="margin-bottom:14px;"><h4 style="font-size:13px; font-weight:700; color:var(--color-navy-main); margin-bottom:4px;">■ 結果・数値変化</h4><div style="background:#F8F6F2; padding:10px 14px; border-radius:4px; white-space:pre-wrap;">${this.escapeHtml(k.results)}</div></div>` : ''}
+
+            ${k.nextActions ? `<div style="margin-bottom:14px;"><h4 style="font-size:13px; font-weight:700; color:var(--color-navy-main); margin-bottom:4px;">■ 次に試す改善アクション・メモ</h4><div style="background:#F8F6F2; padding:10px 14px; border-radius:4px; white-space:pre-wrap;">${this.escapeHtml(k.nextActions)}</div></div>` : ''}
           </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary modal-cancel">キャンセル</button>
-            <button id="btn-save-knw" class="btn btn-gold">保存する</button>
+          <div class="modal-footer" style="justify-content: space-between;">
+            <button id="btn-delete-knw-detail" class="btn btn-danger btn-sm"><i data-lucide="trash-2"></i> このナレッジを削除</button>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-secondary modal-cancel">閉じる</button>
+              <button id="btn-edit-knw-detail" class="btn btn-gold"><i data-lucide="edit-3"></i> 編集する</button>
+            </div>
           </div>
         </div>
       </div>
@@ -5809,6 +5840,78 @@ class AppController {
 
     const mContainer = document.getElementById('modal-container');
     mContainer.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    mContainer.querySelector('#btn-edit-knw-detail').onclick = () => {
+      closeModal();
+      this.openKnowledgeEditModal(k);
+    };
+
+    mContainer.querySelector('#btn-delete-knw-detail').onclick = () => {
+      if (confirm('このナレッジ・振り返りを削除しますか？')) {
+        try {
+          StorageService.deleteKnowledge(k.knowledgeId, this.currentStaff ? this.currentStaff.staffId : '');
+          alert('削除しました。');
+          closeModal();
+          this.renderCurrentView();
+        } catch (err) {
+          alert(`削除エラー: ${err.message}`);
+        }
+      }
+    };
+  }
+
+  // ナレッジ・振り返り 新規登録 / 編集モーダル
+  openKnowledgeEditModal(existingKnw = null) {
+    const jobs = StorageService.getActiveJobs();
+    const isEdit = Boolean(existingKnw && existingKnw.knowledgeId);
+
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3 class="modal-title">${isEdit ? 'ナレッジ・振り返りの編集' : '新規ナレッジ・振り返り登録'}</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label">対象求人</label>
+              <select id="knw-job-id" class="form-select">
+                ${jobs.map(j => `<option value="${j.jobId}" ${isEdit && existingKnw.jobId === j.jobId ? 'selected' : ''}>${this.escapeHtml(j.companyName)} / ${this.escapeHtml(j.jobTitle)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">ナレッジ種別</label>
+              <select id="knw-type" class="form-select">
+                ${KNOWLEDGE_TYPES.map(t => `<option value="${t}" ${isEdit && existingKnw.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">タイトル</label>
+              <input type="text" id="knw-title" class="form-control" placeholder="件名・タイトル" value="${isEdit ? this.escapeHtml(existingKnw.title || '') : ''}">
+            </div>
+
+            <div class="form-group"><label class="form-label">事実・起きたこと (良かった点)</label><textarea id="knw-facts" class="form-control" rows="2">${isEdit ? this.escapeHtml(existingKnw.facts || '') : ''}</textarea></div>
+            <div class="form-group"><label class="form-label">考えられる原因 (反応が悪かった点)</label><textarea id="knw-causes" class="form-control" rows="2">${isEdit ? this.escapeHtml(existingKnw.causes || '') : ''}</textarea></div>
+            <div class="form-group"><label class="form-label">実施した工夫 (想定候補者像など)</label><textarea id="knw-efforts" class="form-control" rows="2">${isEdit ? this.escapeHtml(existingKnw.efforts || '') : ''}</textarea></div>
+            <div class="form-group"><label class="form-label">結果</label><textarea id="knw-results" class="form-control" rows="2">${isEdit ? this.escapeHtml(existingKnw.results || '') : ''}</textarea></div>
+            <div class="form-group"><label class="form-label">次に試す改善アクション</label><textarea id="knw-next" class="form-control" rows="2">${isEdit ? this.escapeHtml(existingKnw.nextActions || '') : ''}</textarea></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-cancel">キャンセル</button>
+            <button id="btn-save-knw" class="btn btn-gold">${isEdit ? '更新を保存する' : '保存する'}</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
 
     const closeModal = () => mContainer.innerHTML = '';
     mContainer.querySelector('.modal-close').onclick = closeModal;
@@ -5820,6 +5923,7 @@ class AppController {
       const title = mContainer.querySelector('#knw-title').value;
 
       StorageService.saveKnowledge({
+        knowledgeId: isEdit ? existingKnw.knowledgeId : undefined,
         jobId,
         type,
         title,
@@ -5828,7 +5932,7 @@ class AppController {
         efforts: mContainer.querySelector('#knw-efforts').value,
         results: mContainer.querySelector('#knw-results').value,
         nextActions: mContainer.querySelector('#knw-next').value
-      }, this.currentStaff.staffId);
+      }, this.currentStaff ? this.currentStaff.staffId : '');
 
       closeModal();
       this.renderCurrentView();
