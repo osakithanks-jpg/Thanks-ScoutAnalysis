@@ -113,6 +113,11 @@ class AppController {
       this.renderCurrentView();
     }
 
+    // サイドバー折りたたみ状態の復元
+    if (localStorage.getItem('scout_sidebar_collapsed') === '1') {
+      this.toggleSidebar(true);
+    }
+
     // 3. onSnapshotによるリアルタイム監視接続開始
     StorageService.attachFirestoreRealtimeListener();
   }
@@ -124,6 +129,10 @@ class AppController {
         const view = el.getAttribute('data-view');
         this.switchView(view);
       });
+    });
+
+    document.getElementById('btn-toggle-sidebar')?.addEventListener('click', () => {
+      this.toggleSidebar();
     });
 
     document.getElementById('current-staff-display')?.addEventListener('click', () => {
@@ -211,6 +220,18 @@ class AppController {
     if (window.lucide) window.lucide.createIcons();
   }
 
+  toggleSidebar(forceState = null) {
+    const sidebar = document.querySelector('.sidebar');
+    if (!sidebar) return;
+    const isCollapsed = forceState !== null ? forceState : !sidebar.classList.contains('collapsed');
+    if (isCollapsed) {
+      sidebar.classList.add('collapsed');
+    } else {
+      sidebar.classList.remove('collapsed');
+    }
+    localStorage.setItem('scout_sidebar_collapsed', isCollapsed ? '1' : '0');
+  }
+
   updateHeaderStaffDisplay() {
     const el = document.getElementById('current-staff-name');
     if (el) el.textContent = this.currentStaff ? this.currentStaff.name : '未選択';
@@ -285,7 +306,7 @@ class AppController {
     const textClr = rankObj.textColor || '#FFFFFF';
 
     if (!isEditable) {
-      return `<span class="badge" style="background-color:${bg}; color:${textClr}; font-size:11px; font-weight:700; border:1px solid rgba(0,0,0,0.08); display:inline-flex; align-items:center; gap:4px; padding:3px 8px;">
+      return `<span class="badge" style="background-color:${bg}; color:${textClr}; font-size:10px; font-weight:700; border:1px solid rgba(0,0,0,0.08); display:inline-flex; align-items:center; gap:2px; padding:1px 5px; flex-shrink:0;">
         ${this.escapeHtml(rankObj.fullLabel)}
       </span>`;
     }
@@ -352,11 +373,11 @@ class AppController {
     const jstToday = this.formatDate(new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })));
 
     container.innerHTML = `
-      <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+      <div class="card" style="margin-bottom: 12px; padding: 12px 18px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
           <div style="display: flex; align-items: center; gap: 8px;">
             <button id="btn-prev-day" class="btn btn-secondary btn-sm"><i data-lucide="chevron-left"></i> 前日</button>
-            <input type="date" id="entry-date-picker" class="form-control" style="width: 150px; font-weight: 600;" value="${this.entryDateStr}" max="${jstToday}">
+            <input type="date" id="entry-date-picker" class="form-control" style="width: 145px; font-weight: 600; padding:4px 8px; font-size:12px;" value="${this.entryDateStr}" max="${jstToday}">
             <button id="btn-next-day" class="btn btn-secondary btn-sm" ${this.entryDateStr >= jstToday ? 'disabled' : ''}>翌日 <i data-lucide="chevron-right"></i></button>
             <button id="btn-today" class="btn btn-gold btn-sm">今日へ戻る</button>
           </div>
@@ -367,22 +388,22 @@ class AppController {
         </div>
       </div>
 
-      <div class="card" style="margin-bottom: 16px; padding: 14px 20px;">
-        <div style="display:flex; flex-direction:column; gap:12px;">
-          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
-            <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:240px;">
-              <div style="position:relative; width:100%; max-width:320px;">
-                <input type="text" id="daily-entry-search-input" class="form-control" placeholder="担当求人を検索 (企業名・求人名)" value="${this.escapeHtml(this.dailyEntrySearchKeyword)}" style="padding-left:32px;">
-                <i data-lucide="search" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-muted);"></i>
+      <div class="card" style="margin-bottom: 12px; padding: 10px 16px;">
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+            <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:220px;">
+              <div style="position:relative; width:100%; max-width:280px;">
+                <input type="text" id="daily-entry-search-input" class="form-control" placeholder="担当求人を検索 (企業名・求人名)" value="${this.escapeHtml(this.dailyEntrySearchKeyword)}" style="padding-left:30px; font-size:12px; padding-top:4px; padding-bottom:4px;">
+                <i data-lucide="search" style="position:absolute; left:9px; top:50%; transform:translateY(-50%); width:13px; height:13px; color:var(--text-muted);"></i>
               </div>
               ${this.dailyEntrySearchKeyword ? `
-                <button id="btn-clear-entry-search" class="btn btn-secondary btn-sm">検索解除</button>
+                <button id="btn-clear-entry-search" class="btn btn-secondary btn-sm" style="padding:2px 8px;">検索解除</button>
               ` : ''}
             </div>
 
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">並び替え:</span>
-              <select id="daily-entry-sort-select" class="form-select" style="width:210px; font-size:12px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:11.5px; font-weight:700; color:var(--text-secondary);">並び替え:</span>
+              <select id="daily-entry-sort-select" class="form-select" style="width:190px; font-size:11.5px; padding:3px 6px;">
                 <option value="standard" ${this.dailyEntrySortBy === 'standard' ? 'selected' : ''}>標準 (固定優先 企業名順)</option>
                 <option value="company_asc" ${this.dailyEntrySortBy === 'company_asc' ? 'selected' : ''}>企業名順：昇順</option>
                 <option value="company_desc" ${this.dailyEntrySortBy === 'company_desc' ? 'selected' : ''}>企業名順：降順</option>
@@ -396,41 +417,41 @@ class AppController {
             </div>
           </div>
 
-          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12px;">
-            <span style="font-weight:700; color:var(--text-secondary); margin-right:4px;">絞り込み:</span>
-            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'all' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="all">すべて</button>
-            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'pinned' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="pinned"><i data-lucide="pin" style="width:12px;height:12px;"></i> 固定求人のみ</button>
-            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'active' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="active">スカウト実施中</button>
-            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'prep' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="prep">準備中</button>
-            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'stopped' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="stopped">返信のみ入力可能</button>
-            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'rank_SS' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="rank_SS">SS最重点</button>
-            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'rank_S' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="rank_S">S重点</button>
-            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'entered_media' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="entered_media">本日の実績あり</button>
+          <div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap; font-size:11.5px;">
+            <span style="font-weight:700; color:var(--text-secondary); margin-right:2px;">絞り込み:</span>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'all' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="all" style="padding:2px 8px; font-size:11px;">すべて</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'pinned' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="pinned" style="padding:2px 8px; font-size:11px;"><i data-lucide="pin" style="width:11px;height:11px;"></i> 固定求人のみ</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'active' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="active" style="padding:2px 8px; font-size:11px;">スカウト実施中</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'prep' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="prep" style="padding:2px 8px; font-size:11px;">準備中</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'stopped' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="stopped" style="padding:2px 8px; font-size:11px;">返信のみ入力可能</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'rank_SS' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="rank_SS" style="padding:2px 8px; font-size:11px;">SS最重点</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'rank_S' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="rank_S" style="padding:2px 8px; font-size:11px;">S重点</button>
+            <button class="btn btn-sm btn-filter-tab ${this.dailyEntryFilterType === 'entered_media' ? 'btn-gold' : 'btn-secondary'}" data-filter-type="entered_media" style="padding:2px 8px; font-size:11px;">本日の実績あり</button>
           </div>
         </div>
       </div>
 
-      <div id="matrix-error-alert" style="display: none; margin-bottom: 16px;" class="notice-box" style="background-color:#FFF5F5; border-color:#FEB2B2; color:#C53030;"></div>
+      <div id="matrix-error-alert" style="display: none; margin-bottom: 12px;" class="notice-box" style="background-color:#FFF5F5; border-color:#FEB2B2; color:#C53030;"></div>
 
-      <div class="card">
-        <div class="card-header-flex">
-          <h3 class="card-title"><i data-lucide="table" style="color:var(--color-gold-accent);"></i> スカウト実績入力マトリクス (${this.entryDateStr})</h3>
-          <span style="font-size:12px; color:var(--text-secondary);">※セル内で送信・総返信・有効返信を直接入力または＋/－ボタン操作</span>
+      <div class="card" style="padding:14px 16px;">
+        <div class="card-header-flex" style="margin-bottom:10px;">
+          <h3 class="card-title" style="font-size:14px;"><i data-lucide="table" style="color:var(--color-gold-accent);"></i> スカウト実績入力マトリクス (${this.entryDateStr})</h3>
+          <span style="font-size:11px; color:var(--text-secondary);">※セル内で直接入力または＋/－操作 (自動保存)</span>
         </div>
 
         <div class="matrix-table-container">
           <table class="matrix-table">
             <thead>
               <tr>
-                <th style="min-width: 260px; text-align: left; position: sticky; left: 0; z-index: 5;">企業名 / 求人名</th>
-                <th style="width: 80px;">ステータス</th>
-                ${mediaList.map(m => `<th style="min-width: 140px; border-top: 3px solid ${m.color || '#1A365D'};">${m.name}</th>`).join('')}
+                <th class="matrix-col-job" style="text-align: left; position: sticky; left: 0; z-index: 5; background-color: var(--color-navy-main);">企業名 / 求人名</th>
+                <th class="matrix-col-status">ステータス</th>
+                ${mediaList.map(m => `<th class="matrix-col-media" style="border-top: 3px solid ${m.color || '#1A365D'};">${this.escapeHtml(m.name)}</th>`).join('')}
               </tr>
             </thead>
             <tbody>
               ${activeUserJobs.length === 0 ? `
                 <tr>
-                  <td colspan="${mediaList.length + 2}" style="padding: 32px; text-align: center; color: var(--text-muted); font-weight: 600;">
+                  <td colspan="${mediaList.length + 2}" style="padding: 24px; text-align: center; color: var(--text-muted); font-weight: 600;">
                     ${this.dailyEntrySearchKeyword || this.dailyEntryFilterType !== 'all' ? '条件に一致する担当求人がありません' : '担当求人が登録されていません。「担当求人を追加・整理」ボタンから追加してください。'}
                   </td>
                 </tr>
@@ -440,17 +461,17 @@ class AppController {
         </div>
 
         ${stoppedUserJobs.length > 0 ? `
-          <div class="stopped-jobs-section">
-            <div class="stopped-jobs-header" id="toggle-stopped-jobs">
+          <div class="stopped-jobs-section" style="margin-top:16px;">
+            <div class="stopped-jobs-header" id="toggle-stopped-jobs" style="font-size:12.5px;">
               <i data-lucide="chevron-down"></i> 返信のみ入力可能な求人 (一時停止・募集終了: ${stoppedUserJobs.length}件)
             </div>
             <div id="stopped-jobs-container" class="matrix-table-container">
               <table class="matrix-table">
                 <thead>
                   <tr>
-                    <th style="min-width: 260px; text-align: left;">企業名 / 求人名</th>
-                    <th style="width: 80px;">ステータス</th>
-                    ${mediaList.map(m => `<th>${m.name}</th>`).join('')}
+                    <th class="matrix-col-job" style="text-align: left;">企業名 / 求人名</th>
+                    <th class="matrix-col-status">ステータス</th>
+                    ${mediaList.map(m => `<th class="matrix-col-media">${this.escapeHtml(m.name)}</th>`).join('')}
                   </tr>
                 </thead>
                 <tbody>
@@ -472,33 +493,33 @@ class AppController {
 
     return `
       <tr data-job-id="${job.jobId}">
-        <td style="text-align: left; position: sticky; left: 0; background-color: #FFFFFF; z-index: 4;">
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-            <div>
-              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                <span style="font-weight: 700; color: var(--color-navy-main); font-size: 13px;">${this.escapeHtml(job.companyName)}</span>
+        <td class="matrix-col-job" style="text-align: left; position: sticky; left: 0; background-color: #FFFFFF; z-index: 4; padding: 4px 6px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+            <div style="min-width: 0; flex: 1;">
+              <div style="display:flex; align-items:center; gap:4px; min-width: 0;">
+                <span class="job-company-name" title="${this.escapeHtml(job.companyName)}">${this.escapeHtml(job.companyName)}</span>
                 ${rankBadgeHtml}
               </div>
-              <div style="font-size: 11.5px; color: var(--text-secondary); margin-top:2px;">${this.escapeHtml(job.jobTitle)}</div>
+              <div class="job-title-name" title="${this.escapeHtml(job.jobTitle)}">${this.escapeHtml(job.jobTitle)}</div>
             </div>
-            <div style="display: flex; gap: 2px;">
-              <button class="btn-mini btn-pin-job" data-staff-job-id="${uj.staffJobId}" title="${isPinned ? '固定解除' : '上部へ固定'}">
-                <i data-lucide="pin" style="width:12px;height:12px; ${isPinned ? 'color:var(--color-gold-accent);fill:var(--color-gold-accent);' : 'color:#CBD5E0;'}"></i>
+            <div style="display: flex; gap: 1px; flex-shrink: 0;">
+              <button class="btn-mini btn-pin-job" data-staff-job-id="${uj.staffJobId}" title="${isPinned ? '固定解除' : '上部へ固定'}" style="padding:1px 3px;">
+                <i data-lucide="pin" style="width:10px;height:10px; ${isPinned ? 'color:var(--color-gold-accent);fill:var(--color-gold-accent);' : 'color:#CBD5E0;'}"></i>
               </button>
-              <button class="btn-mini btn-hide-job" data-staff-job-id="${uj.staffJobId}" title="非表示にする">
-                <i data-lucide="eye-off" style="width:12px;height:12px; color:#A0AEC0;"></i>
+              <button class="btn-mini btn-hide-job" data-staff-job-id="${uj.staffJobId}" title="非表示にする" style="padding:1px 3px;">
+                <i data-lucide="eye-off" style="width:10px;height:10px; color:#A0AEC0;"></i>
               </button>
             </div>
           </div>
         </td>
-        <td>
-          <span class="badge ${job.status === 'スカウト実施中' ? 'badge-success' : job.status === '準備中' ? 'badge-gold' : 'badge-gray'}">${job.status}</span>
+        <td class="matrix-col-status" style="padding: 4px 2px; text-align: center;">
+          <span class="badge ${job.status === 'スカウト実施中' ? 'badge-success' : job.status === '準備中' ? 'badge-gold' : 'badge-gray'}" style="font-size: 9.5px; padding: 2px 4px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block;">${job.status}</span>
         </td>
         ${mediaList.map(m => {
           const recKey = `${job.jobId}_${m.id}`;
           const rec = existingResultsMap.get(recKey) || { sentCount: 0, totalReplyCount: 0, effectiveReplyCount: 0 };
           return `
-            <td>
+            <td class="matrix-col-media">
               <div class="media-subcell-container" data-job-id="${job.jobId}" data-media-id="${m.id}">
                 <div class="subcell-row">
                   <span class="subcell-label">送信</span>

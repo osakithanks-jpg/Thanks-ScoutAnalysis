@@ -113,7 +113,12 @@
       <!-- メインコンテンツ領域 -->
       <div class="main-wrapper">
         <header class="top-bar">
-          <h2 class="page-title" id="page-title">本日の実績入力</h2>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <button id="btn-toggle-sidebar" class="btn btn-secondary btn-sm" title="メニュー展開/折りたたみ" style="padding: 5px 9px;">
+              <i data-lucide="panel-left-close" style="width: 16px; height: 16px;"></i>
+            </button>
+            <h2 class="page-title" id="page-title">本日の実績入力</h2>
+          </div>
 
           <div class="top-bar-right">
             <!-- 自動保存ステータス表示 -->
