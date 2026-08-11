@@ -831,6 +831,115 @@ body {
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 
+/* 日報表示モード & 画像キャプチャ用専用スタイル */
+.daily-report-container {
+  background: #FFFFFF;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+  font-family: 'Noto Sans JP', sans-serif;
+  color: var(--text-primary);
+}
+
+.daily-report-header {
+  border-bottom: 2px solid var(--color-navy-main);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.daily-report-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-navy-main);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.daily-report-timestamp {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.daily-report-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.daily-report-kpi-card {
+  background: #F8F9FA;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.daily-report-kpi-card .kpi-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.daily-report-kpi-card .kpi-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-navy-main);
+}
+
+/* 日報用 案件×媒体マトリクス */
+.daily-report-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.daily-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  background-color: #FFFFFF;
+}
+
+.daily-report-table th {
+  background-color: #1B2A4A;
+  color: #FFFFFF;
+  font-weight: 700;
+  padding: 7px 8px;
+  text-align: center;
+  border: 1px solid #2A3C5E;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.daily-report-table td {
+  padding: 6px 8px;
+  border: 1px solid #E2E8F0;
+  vertical-align: middle;
+  font-size: 11px;
+}
+
+.daily-report-table tr:nth-child(even) {
+  background-color: #FAF9F6;
+}
+
+.daily-report-table tfoot tr {
+  background-color: var(--color-gold-light);
+  font-weight: 700;
+}
+
+.daily-report-table tfoot td {
+  border-top: 2px solid var(--color-gold-accent);
+  color: var(--color-navy-main);
+}
+
 /* レスポンシブ */
 @media (max-width: 768px) {
   .sidebar { width: 60px; }
