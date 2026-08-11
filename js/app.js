@@ -523,28 +523,26 @@ class AppController {
               <div class="media-subcell-container" data-job-id="${job.jobId}" data-media-id="${m.id}">
                 <div class="subcell-row">
                   <span class="subcell-label">送信</span>
-                  <input type="number" min="0" class="subcell-input input-sent" value="${rec.sentCount}" ${isStopped ? 'disabled title="一時停止・募集終了のため送信入力不可"' : ''}>
-                  ${!isStopped ? `
-                    <div class="subcell-btns">
-                      <button class="btn-mini btn-step-sent" data-step="1">+1</button>
-                      <button class="btn-mini btn-step-sent" data-step="5">+5</button>
-                      <button class="btn-mini btn-step-sent" data-step="10">+10</button>
-                      <button class="btn-mini btn-step-sent" data-step="-1">-1</button>
-                    </div>
-                  ` : ''}
+                  <div class="subcell-input-group">
+                    <button class="btn-subcell-step btn-dec-sent" ${isStopped ? 'disabled' : ''}>-</button>
+                    <input type="number" min="0" class="subcell-input input-sent" value="${rec.sentCount}" ${isStopped ? 'disabled title="一時停止・募集終了のため送信入力不可"' : ''}>
+                    <button class="btn-subcell-step btn-inc-sent" ${isStopped ? 'disabled' : ''}>+</button>
+                  </div>
                 </div>
                 <div class="subcell-row">
                   <span class="subcell-label">総返信</span>
-                  <input type="number" min="0" class="subcell-input input-total-reply" value="${rec.totalReplyCount}">
-                  <div class="subcell-btns">
-                    <button class="btn-mini btn-add-total-reply">+1</button>
+                  <div class="subcell-input-group">
+                    <button class="btn-subcell-step btn-dec-total-reply">-</button>
+                    <input type="number" min="0" class="subcell-input input-total-reply" value="${rec.totalReplyCount}">
+                    <button class="btn-subcell-step btn-inc-total-reply">+</button>
                   </div>
                 </div>
                 <div class="subcell-row">
                   <span class="subcell-label" style="color:var(--color-navy-main); font-weight:700;">有効返信</span>
-                  <input type="number" min="0" class="subcell-input input-effective-reply" value="${rec.effectiveReplyCount}">
-                  <div class="subcell-btns">
-                    <button class="btn-mini btn-add-effective-reply" style="background:var(--color-gold-light); border-color:var(--color-gold-accent);">+1</button>
+                  <div class="subcell-input-group">
+                    <button class="btn-subcell-step btn-dec-effective-reply">-</button>
+                    <input type="number" min="0" class="subcell-input input-effective-reply" value="${rec.effectiveReplyCount}">
+                    <button class="btn-subcell-step btn-inc-effective-reply" style="background:var(--color-gold-light); border-color:var(--color-gold-accent);">+</button>
                   </div>
                 </div>
               </div>
@@ -640,9 +638,16 @@ class AppController {
       const inputEffective = cell.querySelector('.input-effective-reply');
 
       const handleUpdate = () => {
-        const sent = Math.max(0, parseInt(inputSent ? inputSent.value : '0', 10) || 0);
-        const total = Math.max(0, parseInt(inputTotal.value, 10) || 0);
-        const effective = Math.max(0, parseInt(inputEffective.value, 10) || 0);
+        const parsePositiveInt = (inp) => {
+          if (!inp) return 0;
+          let val = parseInt(inp.value, 10);
+          if (isNaN(val) || val < 0) val = 0;
+          return val;
+        };
+
+        const sent = parsePositiveInt(inputSent);
+        const total = parsePositiveInt(inputTotal);
+        const effective = parsePositiveInt(inputEffective);
 
         const errorEl = container.querySelector('#matrix-error-alert');
 
@@ -672,30 +677,66 @@ class AppController {
       };
 
       [inputSent, inputTotal, inputEffective].forEach(inp => {
-        inp?.addEventListener('input', handleUpdate);
-        inp?.addEventListener('blur', handleUpdate);
-      });
-
-      cell.querySelectorAll('.btn-step-sent').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const step = parseInt(btn.getAttribute('data-step'), 10);
-          const curr = Math.max(0, parseInt(inputSent.value, 10) || 0);
-          inputSent.value = Math.max(0, curr + step);
+        if (!inp) return;
+        inp.addEventListener('input', () => {
+          let cleaned = inp.value.replace(/[^0-9]/g, '');
+          if (cleaned !== inp.value) {
+            inp.value = cleaned;
+          }
+          handleUpdate();
+        });
+        inp.addEventListener('blur', () => {
+          let val = parseInt(inp.value, 10);
+          if (isNaN(val) || val < 0) {
+            inp.value = '0';
+          } else {
+            inp.value = String(val);
+          }
           handleUpdate();
         });
       });
 
-      cell.querySelector('.btn-add-total-reply')?.addEventListener('click', () => {
-        const curr = Math.max(0, parseInt(inputTotal.value, 10) || 0);
-        inputTotal.value = curr + 1;
+      // 送信 - / +
+      cell.querySelector('.btn-dec-sent')?.addEventListener('click', () => {
+        const curr = Math.max(0, parseInt(inputSent.value, 10) || 0);
+        inputSent.value = String(Math.max(0, curr - 1));
         handleUpdate();
       });
 
-      cell.querySelector('.btn-add-effective-reply')?.addEventListener('click', () => {
+      cell.querySelector('.btn-inc-sent')?.addEventListener('click', () => {
+        const curr = Math.max(0, parseInt(inputSent.value, 10) || 0);
+        inputSent.value = String(curr + 1);
+        handleUpdate();
+      });
+
+      // 総返信 - / +
+      cell.querySelector('.btn-dec-total-reply')?.addEventListener('click', () => {
+        const curr = Math.max(0, parseInt(inputTotal.value, 10) || 0);
+        inputTotal.value = String(Math.max(0, curr - 1));
+        handleUpdate();
+      });
+
+      cell.querySelector('.btn-inc-total-reply')?.addEventListener('click', () => {
+        const curr = Math.max(0, parseInt(inputTotal.value, 10) || 0);
+        inputTotal.value = String(curr + 1);
+        handleUpdate();
+      });
+
+      // 有効返信 - / +
+      cell.querySelector('.btn-dec-effective-reply')?.addEventListener('click', () => {
+        const curr = Math.max(0, parseInt(inputEffective.value, 10) || 0);
+        inputEffective.value = String(Math.max(0, curr - 1));
+        handleUpdate();
+      });
+
+      cell.querySelector('.btn-inc-effective-reply')?.addEventListener('click', () => {
         const currTotal = Math.max(0, parseInt(inputTotal.value, 10) || 0);
         const currEff = Math.max(0, parseInt(inputEffective.value, 10) || 0);
-        inputTotal.value = currTotal + 1;
-        inputEffective.value = currEff + 1;
+        const nextEff = currEff + 1;
+        inputEffective.value = String(nextEff);
+        if (nextEff > currTotal) {
+          inputTotal.value = String(nextEff);
+        }
         handleUpdate();
       });
     });
