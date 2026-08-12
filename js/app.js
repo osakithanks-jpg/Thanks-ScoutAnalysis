@@ -325,51 +325,12 @@ class AppController {
   }
 
   // =========================================================================
-  // 1. 本日の実績入力画面
+  // 1. 本日の実績入力画面 (リアルタイム検索・フォーカス維持・部分一致/AND検索)
   // =========================================================================
   renderDailyEntryView(container) {
     if (!this.currentStaff) return;
 
-    const userJobs = StorageService.getUserJobs(this.currentStaff.staffId).filter(uj => !uj.hidden);
-    const allJobsMap = new Map(StorageService.getJobs().map(j => [j.jobId, j]));
     const mediaList = StorageService.getActiveMediaList();
-    const existingResultsMap = new Map(StorageService.getValidScoutResults()
-      .filter(r => r.staffId === this.currentStaff.staffId && r.date === this.entryDateStr)
-      .map(r => [`${r.jobId}_${r.mediaId}`, r]));
-
-    const userJobItems = [];
-    const todayResultsMap = new Map();
-
-    userJobs.forEach(uj => {
-      const job = allJobsMap.get(uj.jobId);
-      if (job && !job.archived) {
-        userJobItems.push({ uj, job });
-
-        // 当日送信・返信数の計算
-        let sent = 0, totalReply = 0, effectiveReply = 0;
-        mediaList.forEach(m => {
-          const rec = existingResultsMap.get(`${job.jobId}_${m.id}`);
-          if (rec) {
-            sent += Number(rec.sentCount || 0);
-            totalReply += Number(rec.totalReplyCount || 0);
-            effectiveReply += Number(rec.effectiveReplyCount || 0);
-          }
-        });
-        todayResultsMap.set(job.jobId, { sent, totalReply, effectiveReply });
-      }
-    });
-
-    // 検索・簡易絞り込み・ソートの適用
-    const filteredSortedItems = StorageService.sortUserJobsForEntry(userJobItems, {
-      searchKeyword: this.dailyEntrySearchKeyword,
-      filterType: this.dailyEntryFilterType,
-      sortBy: this.dailyEntrySortBy,
-      todayResultsMap
-    });
-
-    const activeUserJobs = filteredSortedItems.filter(({ job }) => job.status !== '一時停止' && job.status !== '募集終了');
-    const stoppedUserJobs = filteredSortedItems.filter(({ job }) => job.status === '一時停止' || job.status === '募集終了');
-
     const jstToday = this.formatDate(new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })));
 
     container.innerHTML = `
@@ -393,12 +354,10 @@ class AppController {
           <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
             <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:220px;">
               <div style="position:relative; width:100%; max-width:280px;">
-                <input type="text" id="daily-entry-search-input" class="form-control" placeholder="担当求人を検索 (企業名・求人名)" value="${this.escapeHtml(this.dailyEntrySearchKeyword)}" style="padding-left:30px; font-size:12px; padding-top:4px; padding-bottom:4px;">
+                <input type="text" id="daily-entry-search-input" class="form-control" placeholder="担当求人を検索 (企業名・求人名)" value="${this.escapeHtml(this.dailyEntrySearchKeyword || '')}" style="padding-left:30px; font-size:12px; padding-top:4px; padding-bottom:4px;">
                 <i data-lucide="search" style="position:absolute; left:9px; top:50%; transform:translateY(-50%); width:13px; height:13px; color:var(--text-muted);"></i>
               </div>
-              ${this.dailyEntrySearchKeyword ? `
-                <button id="btn-clear-entry-search" class="btn btn-secondary btn-sm" style="padding:2px 8px;">検索解除</button>
-              ` : ''}
+              <button id="btn-clear-entry-search" class="btn btn-secondary btn-sm" style="padding:2px 8px; display:${this.dailyEntrySearchKeyword ? 'inline-block' : 'none'};">検索解除</button>
             </div>
 
             <div style="display:flex; align-items:center; gap:6px;">
@@ -433,58 +392,111 @@ class AppController {
 
       <div id="matrix-error-alert" style="display: none; margin-bottom: 12px;" class="notice-box" style="background-color:#FFF5F5; border-color:#FEB2B2; color:#C53030;"></div>
 
-      <div class="card" style="padding:14px 16px;">
-        <div class="card-header-flex" style="margin-bottom:10px;">
-          <h3 class="card-title" style="font-size:14px;"><i data-lucide="table" style="color:var(--color-gold-accent);"></i> スカウト実績入力マトリクス (${this.entryDateStr})</h3>
-          <span style="font-size:11px; color:var(--text-secondary);">※セル内で直接入力または＋/－操作 (自動保存)</span>
-        </div>
-
-        <div class="matrix-table-container">
-          <table class="matrix-table">
-            <thead>
-              <tr>
-                <th class="matrix-col-job" style="text-align: left; position: sticky; left: 0; z-index: 5; background-color: var(--color-navy-main);">企業名 / 求人名</th>
-                <th class="matrix-col-status">ステータス</th>
-                ${mediaList.map(m => `<th class="matrix-col-media" style="border-top: 3px solid ${m.color || '#1A365D'};">${this.escapeHtml(m.name)}</th>`).join('')}
-              </tr>
-            </thead>
-            <tbody>
-              ${activeUserJobs.length === 0 ? `
-                <tr>
-                  <td colspan="${mediaList.length + 2}" style="padding: 24px; text-align: center; color: var(--text-muted); font-weight: 600;">
-                    ${this.dailyEntrySearchKeyword || this.dailyEntryFilterType !== 'all' ? '条件に一致する担当求人がありません' : '担当求人が登録されていません。「担当求人を追加・整理」ボタンから追加してください。'}
-                  </td>
-                </tr>
-              ` : activeUserJobs.map(({ uj, job }) => this.renderMatrixRow(uj, job, mediaList, existingResultsMap, false)).join('')}
-            </tbody>
-          </table>
-        </div>
-
-        ${stoppedUserJobs.length > 0 ? `
-          <div class="stopped-jobs-section" style="margin-top:16px;">
-            <div class="stopped-jobs-header" id="toggle-stopped-jobs" style="font-size:12.5px;">
-              <i data-lucide="chevron-down"></i> 返信のみ入力可能な求人 (一時停止・募集終了: ${stoppedUserJobs.length}件)
-            </div>
-            <div id="stopped-jobs-container" class="matrix-table-container">
-              <table class="matrix-table">
-                <thead>
-                  <tr>
-                    <th class="matrix-col-job" style="text-align: left;">企業名 / 求人名</th>
-                    <th class="matrix-col-status">ステータス</th>
-                    ${mediaList.map(m => `<th class="matrix-col-media">${this.escapeHtml(m.name)}</th>`).join('')}
-                  </tr>
-                </thead>
-                <tbody>
-                  ${stoppedUserJobs.map(({ uj, job }) => this.renderMatrixRow(uj, job, mediaList, existingResultsMap, true)).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ` : ''}
-      </div>
+      <div class="card" id="daily-matrix-card-wrapper" style="padding:14px 16px;"></div>
     `;
 
-    this.bindMatrixEvents(container, mediaList);
+    this.bindDailyControlEvents(container, mediaList);
+    this.updateDailyMatrixTable(container);
+  }
+
+  updateDailyMatrixTable(container) {
+    const cardWrapper = container.querySelector('#daily-matrix-card-wrapper');
+    if (!cardWrapper || !this.currentStaff) return;
+
+    const userJobs = StorageService.getUserJobs(this.currentStaff.staffId).filter(uj => !uj.hidden);
+    const allJobsMap = new Map(StorageService.getJobs().map(j => [j.jobId, j]));
+    const mediaList = StorageService.getActiveMediaList();
+    const existingResultsMap = new Map(StorageService.getValidScoutResults()
+      .filter(r => r.staffId === this.currentStaff.staffId && r.date === this.entryDateStr)
+      .map(r => [`${r.jobId}_${r.mediaId}`, r]));
+
+    const userJobItems = [];
+    const todayResultsMap = new Map();
+
+    userJobs.forEach(uj => {
+      const job = allJobsMap.get(uj.jobId);
+      if (job && !job.archived) {
+        userJobItems.push({ uj, job });
+
+        let sent = 0, totalReply = 0, effectiveReply = 0;
+        mediaList.forEach(m => {
+          const rec = existingResultsMap.get(`${job.jobId}_${m.id}`);
+          if (rec) {
+            sent += Number(rec.sentCount || 0);
+            totalReply += Number(rec.totalReplyCount || 0);
+            effectiveReply += Number(rec.effectiveReplyCount || 0);
+          }
+        });
+        todayResultsMap.set(job.jobId, { sent, totalReply, effectiveReply });
+      }
+    });
+
+    const filteredSortedItems = StorageService.sortUserJobsForEntry(userJobItems, {
+      searchKeyword: this.dailyEntrySearchKeyword,
+      filterType: this.dailyEntryFilterType,
+      sortBy: this.dailyEntrySortBy,
+      todayResultsMap
+    });
+
+    const activeUserJobs = filteredSortedItems.filter(({ job }) => job.status !== '一時停止' && job.status !== '募集終了');
+    const stoppedUserJobs = filteredSortedItems.filter(({ job }) => job.status === '一時停止' || job.status === '募集終了');
+
+    const emptyMsg = (this.dailyEntrySearchKeyword || this.dailyEntryFilterType !== 'all')
+      ? '検索条件に一致する担当求人はありません'
+      : '担当求人が登録されていません。「担当求人を追加・整理」ボタンから追加してください。';
+
+    cardWrapper.innerHTML = `
+      <div class="card-header-flex" style="margin-bottom:10px;">
+        <h3 class="card-title" style="font-size:14px;"><i data-lucide="table" style="color:var(--color-gold-accent);"></i> スカウト実績入力マトリクス (${this.entryDateStr})</h3>
+        <span style="font-size:11px; color:var(--text-secondary);">※セル内で直接入力または＋/－操作 (自動保存)</span>
+      </div>
+
+      <div class="matrix-table-container">
+        <table class="matrix-table">
+          <thead>
+            <tr>
+              <th class="matrix-col-job" style="text-align: left; position: sticky; left: 0; z-index: 5; background-color: var(--color-navy-main);">企業名 / 求人名</th>
+              <th class="matrix-col-status">ステータス</th>
+              ${mediaList.map(m => `<th class="matrix-col-media" style="border-top: 3px solid ${m.color || '#1A365D'};">${this.escapeHtml(m.name)}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${activeUserJobs.length === 0 ? `
+              <tr>
+                <td colspan="${mediaList.length + 2}" style="padding: 24px; text-align: center; color: var(--text-muted); font-weight: 600;">
+                  ${emptyMsg}
+                </td>
+              </tr>
+            ` : activeUserJobs.map(({ uj, job }) => this.renderMatrixRow(uj, job, mediaList, existingResultsMap, false)).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      ${stoppedUserJobs.length > 0 ? `
+        <div class="stopped-jobs-section" style="margin-top:16px;">
+          <div class="stopped-jobs-header" id="toggle-stopped-jobs" style="font-size:12.5px;">
+            <i data-lucide="chevron-down"></i> 返信のみ入力可能な求人 (一時停止・募集終了: ${stoppedUserJobs.length}件)
+          </div>
+          <div id="stopped-jobs-container" class="matrix-table-container">
+            <table class="matrix-table">
+              <thead>
+                <tr>
+                  <th class="matrix-col-job" style="text-align: left;">企業名 / 求人名</th>
+                  <th class="matrix-col-status">ステータス</th>
+                  ${mediaList.map(m => `<th class="matrix-col-media">${this.escapeHtml(m.name)}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${stoppedUserJobs.map(({ uj, job }) => this.renderMatrixRow(uj, job, mediaList, existingResultsMap, true)).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : ''}
+    `;
+
+    if (window.lucide) window.lucide.createIcons();
+    this.bindMatrixCellEvents(container, mediaList);
   }
 
   renderMatrixRow(uj, job, mediaList, existingResultsMap, isStopped) {
@@ -553,7 +565,7 @@ class AppController {
     `;
   }
 
-  bindMatrixEvents(container, mediaList) {
+  bindDailyControlEvents(container, mediaList) {
     const picker = container.querySelector('#entry-date-picker');
     picker?.addEventListener('change', (e) => {
       this.entryDateStr = e.target.value;
@@ -583,30 +595,47 @@ class AppController {
       this.openManageMyJobsModal();
     });
 
-    // 検索・絞り込み・ソートイベント
+    // 検索入力イベント (input要素を破棄せずマトリクスのみ高速更新)
     const searchInp = container.querySelector('#daily-entry-search-input');
-    searchInp?.addEventListener('input', (e) => {
-      this.dailyEntrySearchKeyword = e.target.value;
-      this.renderCurrentView();
-    });
+    const clearBtn = container.querySelector('#btn-clear-entry-search');
 
-    container.querySelector('#btn-clear-entry-search')?.addEventListener('click', () => {
+    const updateSearch = () => {
+      this.dailyEntrySearchKeyword = searchInp.value;
+      if (clearBtn) {
+        clearBtn.style.display = searchInp.value ? 'inline-block' : 'none';
+      }
+      this.updateDailyMatrixTable(container);
+    };
+
+    searchInp?.addEventListener('input', updateSearch);
+
+    clearBtn?.addEventListener('click', () => {
       this.dailyEntrySearchKeyword = '';
-      this.renderCurrentView();
+      if (searchInp) searchInp.value = '';
+      if (clearBtn) clearBtn.style.display = 'none';
+      this.updateDailyMatrixTable(container);
     });
 
     container.querySelector('#daily-entry-sort-select')?.addEventListener('change', (e) => {
       this.dailyEntrySortBy = e.target.value;
-      this.renderCurrentView();
+      this.updateDailyMatrixTable(container);
     });
 
     container.querySelectorAll('.btn-filter-tab').forEach(btn => {
       btn.addEventListener('click', () => {
         this.dailyEntryFilterType = btn.getAttribute('data-filter-type');
-        this.renderCurrentView();
+        container.querySelectorAll('.btn-filter-tab').forEach(b => {
+          b.classList.remove('btn-gold');
+          b.classList.add('btn-secondary');
+        });
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-gold');
+        this.updateDailyMatrixTable(container);
       });
     });
+  }
 
+  bindMatrixCellEvents(container, mediaList) {
     container.querySelectorAll('.btn-pin-job').forEach(btn => {
       btn.addEventListener('click', () => {
         const staffJobId = btn.getAttribute('data-staff-job-id');
@@ -614,7 +643,7 @@ class AppController {
         const uj = list.find(item => item.staffJobId === staffJobId);
         if (uj) {
           StorageService.updateUserJob(staffJobId, { pinned: !uj.pinned });
-          this.renderCurrentView();
+          this.updateDailyMatrixTable(container);
         }
       });
     });
@@ -624,7 +653,7 @@ class AppController {
         const staffJobId = btn.getAttribute('data-staff-job-id');
         if (confirm('この求人を実績入力画面で非表示にしますか？')) {
           StorageService.updateUserJob(staffJobId, { hidden: true });
-          this.renderCurrentView();
+          this.updateDailyMatrixTable(container);
         }
       });
     });

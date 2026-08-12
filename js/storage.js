@@ -1003,17 +1003,33 @@ export class StorageService {
   static filterAndSortJobs(jobsList, { searchKeyword = '', industries = [], positions = [], statuses = [], targetAges = [], roles = [], salaryRanges = [], priorityRanks = [], archived = false, sortBy = 'company_asc' } = {}) {
     let result = jobsList.filter(j => Boolean(j.archived) === Boolean(archived));
 
-    // 1. 検索（企業名, 企業名よみ, 求人名, 業種, 職種 の部分一致）
-    const keyword = (searchKeyword || '').trim().toLowerCase();
-    if (keyword) {
-      result = result.filter(j => {
-        const cName = (j.companyName || '').toLowerCase();
-        const cKana = (j.companyNameKana || '').toLowerCase();
-        const jTitle = (j.jobTitle || '').toLowerCase();
-        const ind = (j.industry || '').toLowerCase();
-        const pos = (j.position || '').toLowerCase();
-        return cName.includes(keyword) || cKana.includes(keyword) || jTitle.includes(keyword) || ind.includes(keyword) || pos.includes(keyword);
-      });
+    // 1. 検索（企業名, 企業名よみ, 求人名, 業種, 職種, 役割, 勤務地等のAND検索 & NFKC正規化）
+    const rawSearch = (searchKeyword || '').trim();
+    if (rawSearch) {
+      const keywords = rawSearch
+        .normalize('NFKC')
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean);
+
+      if (keywords.length > 0) {
+        result = result.filter(j => {
+          const rankLabel = (PRIORITY_RANKS[j.priorityRank]?.fullLabel || '').normalize('NFKC').toLowerCase();
+          const combinedText = [
+            j.companyName || '',
+            j.companyNameKana || '',
+            j.jobTitle || '',
+            j.industry || '',
+            j.position || '',
+            j.role || '',
+            j.workLocation || '',
+            j.location || '',
+            rankLabel
+          ].map(s => String(s).normalize('NFKC').toLowerCase()).join(' ');
+
+          return keywords.every(kw => combinedText.includes(kw));
+        });
+      }
     }
 
     // 2. 多重絞り込み (同一項目OR, 異項目AND)
@@ -1142,15 +1158,33 @@ export class StorageService {
   static sortUserJobsForEntry(userJobItems, { searchKeyword = '', filterType = 'all', sortBy = 'standard', todayResultsMap = new Map() } = {}) {
     let list = [...userJobItems];
 
-    // 1. 検索（企業名, 企業名よみ, 求人名）
-    const keyword = (searchKeyword || '').trim().toLowerCase();
-    if (keyword) {
-      list = list.filter(({ job }) => {
-        const cName = (job.companyName || '').toLowerCase();
-        const cKana = (job.companyNameKana || '').toLowerCase();
-        const jTitle = (job.jobTitle || '').toLowerCase();
-        return cName.includes(keyword) || cKana.includes(keyword) || jTitle.includes(keyword);
-      });
+    // 1. 検索（企業名, 企業名よみ, 求人名, 職種, 業種, 役割, 勤務地, 注力ランク等のAND検索 & NFKC正規化）
+    const rawSearch = (searchKeyword || '').trim();
+    if (rawSearch) {
+      const keywords = rawSearch
+        .normalize('NFKC')
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean);
+
+      if (keywords.length > 0) {
+        list = list.filter(({ job }) => {
+          const rankLabel = (PRIORITY_RANKS[job.priorityRank]?.fullLabel || '').normalize('NFKC').toLowerCase();
+          const combinedText = [
+            job.companyName || '',
+            job.companyNameKana || '',
+            job.jobTitle || '',
+            job.industry || '',
+            job.position || '',
+            job.role || '',
+            job.workLocation || '',
+            job.location || '',
+            rankLabel
+          ].map(s => String(s).normalize('NFKC').toLowerCase()).join(' ');
+
+          return keywords.every(kw => combinedText.includes(kw));
+        });
+      }
     }
 
     // 2. 簡易絞り込み
