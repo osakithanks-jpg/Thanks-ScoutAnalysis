@@ -371,11 +371,14 @@ body {
 
 /* マトリクステーブル (スカウト実績入力用) */
 .matrix-table-container {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: calc(100vh - 220px);
+  min-height: 360px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-light);
   width: 100%;
   background-color: #FFFFFF;
+  position: relative;
 }
 
 .matrix-table {
@@ -387,6 +390,9 @@ body {
 }
 
 .matrix-table th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   background-color: var(--color-navy-main);
   color: #FFFFFF;
   font-weight: 600;
@@ -397,6 +403,14 @@ body {
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.matrix-table th.matrix-col-job {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  background-color: var(--color-navy-main);
 }
 
 .matrix-table td {
