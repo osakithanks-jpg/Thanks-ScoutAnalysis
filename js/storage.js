@@ -1370,9 +1370,14 @@ export class StorageService {
 
   // --- スカウト文面 ---
   static getMessages() { return this.get(KEYS.MESSAGES).filter(m => !m.isArchived); }
+  static getMessageById(messageId) { return this.getMessages().find(m => m.messageId === messageId); }
   static getMessageVersions(messageId = '') {
     const list = this.get(KEYS.MESSAGE_VERSIONS);
     return messageId ? list.filter(v => v.messageId === messageId) : list;
+  }
+  static getLatestVersion(messageId) {
+    const versions = this.getMessageVersions(messageId);
+    return versions.length > 0 ? versions[versions.length - 1] : null;
   }
 
   static saveMessageWithVersion(msg, versionData, operatorStaffId = '') {
@@ -1397,6 +1402,7 @@ export class StorageService {
         targetPosition: msg.targetPosition || '',
         targetAge: msg.targetAge || [],
         status: msg.status || '利用中',
+        visibility: msg.visibility || 'public', // 'public' (全体共有) | 'private' (担当者のみ)
         currentVersionId: '',
         createdStaffId: operatorStaffId,
         updatedStaffId: operatorStaffId,

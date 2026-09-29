@@ -1527,9 +1527,14 @@ class StorageService {
 
   // --- スカウト文面 ---
   static getMessages() { return this.get(KEYS.MESSAGES).filter(m => !m.isArchived); }
+  static getMessageById(messageId) { return this.getMessages().find(m => m.messageId === messageId); }
   static getMessageVersions(messageId = '') {
     const list = this.get(KEYS.MESSAGE_VERSIONS);
     return messageId ? list.filter(v => v.messageId === messageId) : list;
+  }
+  static getLatestVersion(messageId) {
+    const versions = this.getMessageVersions(messageId);
+    return versions.length > 0 ? versions[versions.length - 1] : null;
   }
 
   static saveMessageWithVersion(msg, versionData, operatorStaffId = '') {
@@ -1554,6 +1559,7 @@ class StorageService {
         targetPosition: msg.targetPosition || '',
         targetAge: msg.targetAge || [],
         status: msg.status || '利用中',
+        visibility: msg.visibility || 'public', // 'public' (全体共有) | 'private' (担当者のみ)
         currentVersionId: '',
         createdStaffId: operatorStaffId,
         updatedStaffId: operatorStaffId,
@@ -6526,14 +6532,18 @@ class AppController {
   // =========================================================================
   // 6. スカウト文面管理画面
   // =========================================================================
+  // =========================================================================
+  // 6. スカウト文面管理画面 (一覧・共有・詳細閲覧・1クリックコピー・Ver管理)
+  // =========================================================================
   renderScoutMessagesView(container) {
     const messages = StorageService.getMessages();
     const jobsMap = new Map(StorageService.getJobs().map(j => [j.jobId, j]));
+    const usersMap = new Map(StorageService.getUsers().map(u => [u.staffId, u.name]));
 
     container.innerHTML = `
-      <div class="notice-box">
+      <div class="notice-box" style="margin-bottom: 16px; background-color:#F8F6F2; border-color:#E6D5B8; color:#1B2A4A;">
         <i data-lucide="info"></i>
-        <span>返信日基準で集計しているため、文面別の成果は参考値です。</span>
+        <span>全スタッフが登録・公開したスカウト文面を一覧で参照・1クリックで件名・本文コピーが可能です。</span>
       </div>
 
       <div class="card">
@@ -6542,31 +6552,86 @@ class AppController {
           <button id="btn-create-msg" class="btn btn-gold"><i data-lucide="plus"></i> 新規スカウト文面作成</button>
         </div>
 
-        <table class="data-table">
-          <thead><tr><th>文面名</th><th>対象求人</th><th>最新バージョン</th><th>ステータス</th><th>操作</th></tr></thead>
-          <tbody>
-            ${messages.map(m => {
-              const job = jobsMap.get(m.jobId);
-              const versions = StorageService.getMessageVersions(m.messageId);
-              return `
+        <div class="data-table-wrapper" style="overflow-x:auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>文面名</th>
+                <th>対象求人</th>
+                <th>最新バージョン</th>
+                <th>公開設定</th>
+                <th>作成者 / 更新日時</th>
+                <th style="text-align:center;">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${messages.length === 0 ? `
                 <tr>
-                  <td><strong>${this.escapeHtml(m.title)}</strong></td>
-                  <td>${job ? `${this.escapeHtml(job.companyName)} / ${this.escapeHtml(job.jobTitle)}` : '共通文面'}</td>
-                  <td><span class="badge badge-gold">Ver.${versions.length}</span></td>
-                  <td><span class="badge badge-navy">${m.status}</span></td>
-                  <td>
-                    <button class="btn btn-secondary btn-sm btn-view-msg-history" data-msg-id="${m.messageId}">バージョン履歴</button>
+                  <td colspan="6" style="text-align:center; padding:32px; color:var(--text-muted); font-weight:600;">
+                    登録済みのスカウト文面はありません。「新規スカウト文面作成」から追加できます。
                   </td>
                 </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
+              ` : messages.map(m => {
+                const job = jobsMap.get(m.jobId);
+                const versions = StorageService.getMessageVersions(m.messageId);
+                const creatorName = usersMap.get(m.createdStaffId) || '全体管理者';
+                const isPublic = (m.visibility || 'public') === 'public';
+
+                return `
+                  <tr>
+                    <td><strong>${this.escapeHtml(m.title)}</strong></td>
+                    <td>${job ? `${this.escapeHtml(job.companyName)} / ${this.escapeHtml(job.jobTitle)}` : '<span style="color:var(--text-muted);">共通文面 (指定なし)</span>'}</td>
+                    <td><span class="badge badge-gold">Ver.${versions.length}</span></td>
+                    <td>
+                      ${isPublic 
+                        ? `<span class="badge badge-success" style="display:inline-flex; align-items:center; gap:3px;"><i data-lucide="globe" style="width:11px;height:11px;"></i> 全体共有 (公開)</span>`
+                        : `<span class="badge badge-gray" style="display:inline-flex; align-items:center; gap:3px;"><i data-lucide="lock" style="width:11px;height:11px;"></i> 担当者のみ</span>`
+                      }
+                    </td>
+                    <td>
+                      <span style="font-size:12px; font-weight:600; color:var(--color-navy-main);">${this.escapeHtml(creatorName)}</span>
+                      <br><span style="font-size:10.5px; color:var(--text-muted);">${m.updatedAt ? m.updatedAt.slice(0,10) : '-'}</span>
+                    </td>
+                    <td style="text-align:center;">
+                      <div style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+                        <button class="btn btn-navy btn-sm btn-view-msg-detail" data-msg-id="${m.messageId}">
+                          <i data-lucide="eye"></i> 本文を見る・コピー
+                        </button>
+                        <button class="btn btn-gold btn-sm btn-edit-msg-version" data-msg-id="${m.messageId}">
+                          <i data-lucide="plus-circle"></i> 新Ver作成
+                        </button>
+                        <button class="btn btn-secondary btn-sm btn-view-msg-history" data-msg-id="${m.messageId}">
+                          <i data-lucide="history"></i> 履歴
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
 
+    if (window.lucide) window.lucide.createIcons();
+
     container.querySelector('#btn-create-msg')?.addEventListener('click', () => {
       this.openMessageEditModal();
+    });
+
+    container.querySelectorAll('.btn-view-msg-detail').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const msgId = btn.getAttribute('data-msg-id');
+        this.openMessageDetailModal(msgId);
+      });
+    });
+
+    container.querySelectorAll('.btn-edit-msg-version').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const msgId = btn.getAttribute('data-msg-id');
+        this.openMessageEditModal(msgId);
+      });
     });
 
     container.querySelectorAll('.btn-view-msg-history').forEach(btn => {
@@ -6577,39 +6642,65 @@ class AppController {
     });
   }
 
-  openMessageEditModal() {
+  // 文面新規作成・新バージョン保存モーダル
+  openMessageEditModal(messageId = null) {
     const jobs = StorageService.getActiveJobs();
+    const existingMsg = messageId ? StorageService.getMessageById(messageId) : null;
+    const latestVer = messageId ? StorageService.getLatestVersion(messageId) : null;
+    const isNew = !existingMsg;
+
+    const currentVerNum = latestVer ? latestVer.versionNumber + 1 : 1;
+
     const html = `
       <div class="modal-overlay">
-        <div class="modal-card">
+        <div class="modal-card" style="max-width: 650px;">
           <div class="modal-header">
-            <h3 class="modal-title">新規スカウト文面登録 (Ver.1)</h3>
+            <h3 class="modal-title">${isNew ? '新規スカウト文面登録 (Ver.1)' : `スカウト文面の新バージョン保存 (Ver.${currentVerNum})`}</h3>
             <button class="modal-close">&times;</button>
           </div>
           <div class="modal-body">
             <div class="form-group">
               <label class="form-label">文面名</label>
-              <input type="text" id="msg-title" class="form-control" placeholder="例: 法人営業向け 件名訴求Ver">
+              <input type="text" id="msg-title" class="form-control" placeholder="例: 法人営業向け 件名訴求Ver" value="${this.escapeHtml(existingMsg ? existingMsg.title : '')}">
+            </div>
+
+            <div class="grid-2" style="gap:12px;">
+              <div class="form-group">
+                <label class="form-label">対象求人 (任意)</label>
+                <select id="msg-job-id" class="form-select">
+                  <option value="">共通文面 (指定なし)</option>
+                  ${jobs.map(j => `<option value="${j.jobId}" ${existingMsg && existingMsg.jobId === j.jobId ? 'selected' : ''}>${j.companyName} / ${j.jobTitle}</option>`).join('')}
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">公開設定</label>
+                <select id="msg-visibility" class="form-select">
+                  <option value="public" ${(existingMsg ? existingMsg.visibility : 'public') === 'public' ? 'selected' : ''}>全体共有 (全スタッフが閲覧・利用可能)</option>
+                  <option value="private" ${existingMsg && existingMsg.visibility === 'private' ? 'selected' : ''}>担当者のみ (非公開)</option>
+                </select>
+              </div>
+            </div>
+
+            ${!isNew ? `
+              <div class="form-group">
+                <label class="form-label">今回の変更理由 / 目的</label>
+                <input type="text" id="msg-change-reason" class="form-control" placeholder="例: 件名をABテスト用に短縮、訴求ポイントの変更">
+              </div>
+            ` : ''}
+
+            <div class="form-group">
+              <label class="form-label">件名 (Subject)</label>
+              <input type="text" id="msg-subject" class="form-control" placeholder="スカウト件名" value="${this.escapeHtml(latestVer ? latestVer.subject : '')}">
             </div>
             <div class="form-group">
-              <label class="form-label">対象求人 (任意)</label>
-              <select id="msg-job-id" class="form-select">
-                <option value="">共通文面 (指定なし)</option>
-                ${jobs.map(j => `<option value="${j.jobId}">${j.companyName} / ${j.jobTitle}</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">件名</label>
-              <input type="text" id="msg-subject" class="form-control" placeholder="スカウト件名">
-            </div>
-            <div class="form-group">
-              <label class="form-label">本文</label>
-              <textarea id="msg-body" class="form-control" rows="6" placeholder="スカウト本文"></textarea>
+              <label class="form-label">本文 (Body)</label>
+              <textarea id="msg-body" class="form-control" rows="8" placeholder="スカウト本文">${this.escapeHtml(latestVer ? latestVer.body : '')}</textarea>
             </div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary modal-cancel">キャンセル</button>
-            <button id="btn-save-msg" class="btn btn-gold">作成する (Ver.1)</button>
+            <button id="btn-save-msg" class="btn btn-gold">${isNew ? '全体に公開して保存 (Ver.1)' : `新バージョンを保存 (Ver.${currentVerNum})`}</button>
           </div>
         </div>
       </div>
@@ -6623,44 +6714,165 @@ class AppController {
     mContainer.querySelector('.modal-cancel').onclick = closeModal;
 
     mContainer.querySelector('#btn-save-msg').onclick = () => {
-      const title = mContainer.querySelector('#msg-title').value;
+      const title = mContainer.querySelector('#msg-title').value.trim();
       const jobId = mContainer.querySelector('#msg-job-id').value;
-      const subject = mContainer.querySelector('#msg-subject').value;
-      const body = mContainer.querySelector('#msg-body').value;
+      const visibility = mContainer.querySelector('#msg-visibility').value;
+      const subject = mContainer.querySelector('#msg-subject').value.trim();
+      const body = mContainer.querySelector('#msg-body').value.trim();
+      const changeReason = isNew ? '初回登録' : (mContainer.querySelector('#msg-change-reason')?.value.trim() || '文面更新');
 
       if (!title || !subject || !body) {
         alert('文面名、件名、本文は必須項目です。');
         return;
       }
 
-      StorageService.saveMessageWithVersion({ title, jobId }, { subject, body, changeReason: '初回登録' }, this.currentStaff.staffId);
+      StorageService.saveMessageWithVersion(
+        { messageId: messageId || undefined, title, jobId, visibility },
+        { subject, body, changeReason },
+        this.currentStaff ? this.currentStaff.staffId : ''
+      );
       closeModal();
       this.renderCurrentView();
     };
   }
 
-  openVersionHistoryModal(messageId) {
+  // 文面詳細・1クリックコピー用モーダル
+  openMessageDetailModal(messageId, targetVersionId = null) {
+    const msg = StorageService.getMessageById(messageId);
+    if (!msg) return;
+
     const versions = StorageService.getMessageVersions(messageId);
+    let selectedVersion = targetVersionId 
+      ? versions.find(v => v.versionId === targetVersionId)
+      : versions[versions.length - 1];
+
+    if (!selectedVersion && versions.length > 0) {
+      selectedVersion = versions[versions.length - 1];
+    }
+
+    const job = StorageService.getJobById(msg.jobId);
+    const usersMap = new Map(StorageService.getUsers().map(u => [u.staffId, u.name]));
+    const authorName = selectedVersion ? (usersMap.get(selectedVersion.changedByStaffId) || '全体管理者') : '全体管理者';
 
     const html = `
       <div class="modal-overlay">
-        <div class="modal-card">
+        <div class="modal-card" style="max-width: 700px;">
+          <div class="modal-header">
+            <h3 class="modal-title"><i data-lucide="file-text"></i> 文面詳細: ${this.escapeHtml(msg.title)}</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div style="background:#FAF9F6; border:1px solid #E2E8F0; padding:12px 16px; border-radius:6px; margin-bottom:16px; display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:12px;">
+              <div><strong>対象求人:</strong> ${job ? `${this.escapeHtml(job.companyName)} / ${this.escapeHtml(job.jobTitle)}` : '共通文面'}</div>
+              <div><strong>表示バージョン:</strong> <span class="badge badge-gold">Ver.${selectedVersion ? selectedVersion.versionNumber : 1}</span></div>
+              <div><strong>更新担当者:</strong> ${this.escapeHtml(authorName)}</div>
+              <div><strong>最終更新日時:</strong> ${selectedVersion ? selectedVersion.createdAt.slice(0,16) : '-'}</div>
+              <div><strong>公開設定:</strong> ${msg.visibility === 'private' ? '担当者のみ (非公開)' : '全体共有 (公開中)'}</div>
+              <div><strong>変更理由:</strong> ${this.escapeHtml(selectedVersion ? selectedVersion.changeReason || '' : '-')}</div>
+            </div>
+
+            ${versions.length > 1 ? `
+              <div style="margin-bottom:14px; display:flex; align-items:center; gap:8px;">
+                <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">バージョン切り替え:</span>
+                <select id="select-msg-version-history" class="form-select" style="width:220px; font-size:12px;">
+                  ${versions.map(v => `<option value="${v.versionId}" ${selectedVersion && selectedVersion.versionId === v.versionId ? 'selected' : ''}>Ver.${v.versionNumber} (${v.createdAt.slice(0,10)}) - ${this.escapeHtml(v.changeReason || '更新')}</option>`).join('')}
+                </select>
+              </div>
+            ` : ''}
+
+            <div class="form-group">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <label class="form-label" style="margin:0;">件名 (Subject)</label>
+                <button id="btn-copy-subject" class="btn btn-secondary btn-sm" style="font-size:11px; padding:2px 8px;"><i data-lucide="copy" style="width:12px;height:12px;"></i> 件名をコピー</button>
+              </div>
+              <input type="text" id="detail-msg-subject" class="form-control" readonly value="${this.escapeHtml(selectedVersion ? selectedVersion.subject : '')}" style="background:#F7FAFC; font-weight:600;">
+            </div>
+
+            <div class="form-group" style="margin-top:12px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <label class="form-label" style="margin:0;">本文 (Body)</label>
+                <button id="btn-copy-body" class="btn btn-gold btn-sm" style="font-size:11px; padding:2px 8px;"><i data-lucide="copy" style="width:12px;height:12px;"></i> 本文をコピー</button>
+              </div>
+              <textarea id="detail-msg-body" class="form-control" rows="10" readonly style="background:#F7FAFC; font-size:12.5px; line-height:1.6;">${this.escapeHtml(selectedVersion ? selectedVersion.body : '')}</textarea>
+            </div>
+
+            <div id="copy-toast-msg" style="display:none; padding:8px 12px; background:#C5A059; color:#FFF; font-size:12px; font-weight:600; border-radius:4px; text-align:center; margin-top:8px;"></div>
+          </div>
+          <div class="modal-footer" style="justify-content:space-between;">
+            <button id="btn-copy-all" class="btn btn-navy"><i data-lucide="copy"></i> 件名と本文を一括コピー</button>
+            <button class="btn btn-secondary modal-cancel">閉じる</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    const showToast = (text) => {
+      const toast = mContainer.querySelector('#copy-toast-msg');
+      if (toast) {
+        toast.textContent = text;
+        toast.style.display = 'block';
+        setTimeout(() => toast.style.display = 'none', 2500);
+      }
+    };
+
+    mContainer.querySelector('#select-msg-version-history')?.addEventListener('change', (e) => {
+      this.openMessageDetailModal(messageId, e.target.value);
+    });
+
+    mContainer.querySelector('#btn-copy-subject')?.addEventListener('click', () => {
+      const subject = selectedVersion ? selectedVersion.subject : '';
+      navigator.clipboard.writeText(subject).then(() => showToast('件名をクリップボードにコピーしました！'));
+    });
+
+    mContainer.querySelector('#btn-copy-body')?.addEventListener('click', () => {
+      const body = selectedVersion ? selectedVersion.body : '';
+      navigator.clipboard.writeText(body).then(() => showToast('本文をクリップボードにコピーしました！'));
+    });
+
+    mContainer.querySelector('#btn-copy-all')?.addEventListener('click', () => {
+      const fullText = `【件名】\n${selectedVersion ? selectedVersion.subject : ''}\n\n【本文】\n${selectedVersion ? selectedVersion.body : ''}`;
+      navigator.clipboard.writeText(fullText).then(() => showToast('件名と本文を一括コピーしました！'));
+    });
+  }
+
+  openVersionHistoryModal(messageId) {
+    const versions = StorageService.getMessageVersions(messageId);
+    const usersMap = new Map(StorageService.getUsers().map(u => [u.staffId, u.name]));
+
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 650px;">
           <div class="modal-header">
             <h3 class="modal-title">文面バージョン履歴</h3>
             <button class="modal-close">&times;</button>
           </div>
           <div class="modal-body">
             <table class="data-table">
-              <thead><tr><th>バージョン</th><th>変更理由</th><th>件名</th><th>作成日時</th></tr></thead>
+              <thead><tr><th>バージョン</th><th>変更理由</th><th>件名</th><th>更新者</th><th>作成日時</th><th>操作</th></tr></thead>
               <tbody>
-                ${versions.map(v => `
-                  <tr>
-                    <td><span class="badge badge-gold">Ver.${v.versionNumber}</span></td>
-                    <td>${this.escapeHtml(v.changeReason || '')}</td>
-                    <td>${this.escapeHtml(v.subject)}</td>
-                    <td>${v.createdAt.slice(0,16)}</td>
-                  </tr>
-                `).join('')}
+                ${versions.map(v => {
+                  const author = usersMap.get(v.changedByStaffId) || '全体管理者';
+                  return `
+                    <tr>
+                      <td><span class="badge badge-gold">Ver.${v.versionNumber}</span></td>
+                      <td>${this.escapeHtml(v.changeReason || '')}</td>
+                      <td><strong>${this.escapeHtml(v.subject)}</strong></td>
+                      <td>${this.escapeHtml(author)}</td>
+                      <td>${v.createdAt ? v.createdAt.slice(0,16) : '-'}</td>
+                      <td>
+                        <button class="btn btn-navy btn-sm btn-view-ver-detail" data-ver-id="${v.versionId}">本文を見る</button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
               </tbody>
             </table>
           </div>
@@ -6676,6 +6888,13 @@ class AppController {
     const closeModal = () => mContainer.innerHTML = '';
     mContainer.querySelector('.modal-close').onclick = closeModal;
     mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    mContainer.querySelectorAll('.btn-view-ver-detail').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const verId = btn.getAttribute('data-ver-id');
+        this.openMessageDetailModal(messageId, verId);
+      });
+    });
   }
 
   // =========================================================================
