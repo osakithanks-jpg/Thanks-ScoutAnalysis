@@ -1157,7 +1157,7 @@ class StorageService {
   /**
    * 求人マスタの検索・絞り込み・並び替え処理
    */
-  static filterAndSortJobs(jobsList, { searchKeyword = '', industries = [], positions = [], statuses = [], targetAges = [], roles = [], salaryRanges = [], priorityRanks = [], archived = false, sortBy = 'company_asc' } = {}) {
+  static filterAndSortJobs(jobsList, { searchKeyword = '', companies = [], industries = [], positions = [], statuses = [], targetAges = [], roles = [], salaryRanges = [], priorityRanks = [], archived = false, sortBy = 'company_asc' } = {}) {
     let result = jobsList.filter(j => Boolean(j.archived) === Boolean(archived));
 
     // 1. 検索（企業名, 企業名よみ, 求人名, 業種, 職種, 役割, 勤務地等のAND検索 & NFKC正規化）
@@ -1190,6 +1190,9 @@ class StorageService {
     }
 
     // 2. 多重絞り込み (同一項目OR, 異項目AND)
+    if (companies.length > 0) {
+      result = result.filter(j => (j.companyId && companies.includes(j.companyId)) || (j.companyName && companies.includes(j.companyName)));
+    }
     if (industries.length > 0) result = result.filter(j => j.industry && industries.includes(j.industry));
     if (positions.length > 0) result = result.filter(j => j.position && positions.includes(j.position));
     if (statuses.length > 0) result = result.filter(j => j.status && statuses.includes(j.status));
@@ -2830,6 +2833,7 @@ class AppController {
     this.jobsMasterSearchKeyword = '';
     this.jobsMasterSortBy = 'company_asc';
     this.jobsMasterFilters = {
+      companies: [],
       industries: [],
       positions: [],
       statuses: [],
@@ -5285,8 +5289,40 @@ class AppController {
   // =========================================================================
   renderJobsView(container) {
     const allJobs = StorageService.getJobs();
+
+    // 企業の重複排除 & 五十音順ソート
+    const companyMap = new Map();
+    allJobs.filter(j => !j.archived).forEach(j => {
+      const cKey = j.companyId || j.companyName;
+      if (!cKey) return;
+      if (!companyMap.has(cKey)) {
+        companyMap.set(cKey, {
+          companyId: j.companyId || '',
+          companyName: j.companyName || '',
+          companyNameKana: j.companyNameKana || '',
+          count: 0
+        });
+      }
+      companyMap.get(cKey).count++;
+    });
+
+    const uniqueCompanies = Array.from(companyMap.values());
+    uniqueCompanies.sort((a, b) => {
+      const keyA = (a.companyNameKana || a.companyName || '').trim();
+      const keyB = (b.companyNameKana || b.companyName || '').trim();
+      return keyA.localeCompare(keyB, 'ja', { sensitivity: 'base' });
+    });
+
+    if (!this.jobsMasterFilters) {
+      this.jobsMasterFilters = { companies: [], industries: [], positions: [], statuses: [], targetAges: [], roles: [], salaryRanges: [], priorityRanks: [] };
+    }
+    if (!this.jobsMasterFilters.companies) {
+      this.jobsMasterFilters.companies = [];
+    }
+
     const filteredJobs = StorageService.filterAndSortJobs(allJobs, {
       searchKeyword: this.jobsMasterSearchKeyword,
+      companies: this.jobsMasterFilters.companies || [],
       industries: this.jobsMasterFilters.industries,
       positions: this.jobsMasterFilters.positions,
       statuses: this.jobsMasterFilters.statuses,
@@ -5295,10 +5331,11 @@ class AppController {
       salaryRanges: this.jobsMasterFilters.salaryRanges,
       priorityRanks: this.jobsMasterFilters.priorityRanks,
       archived: false,
-      sortBy: this.jobsMasterSortBy
+      sortBy: this.jobsMasterSortBy || 'company_asc'
     });
 
     const activeFilterCount =
+      (this.jobsMasterFilters.companies || []).length +
       this.jobsMasterFilters.industries.length +
       this.jobsMasterFilters.positions.length +
       this.jobsMasterFilters.statuses.length +
@@ -5331,24 +5368,35 @@ class AppController {
       <div class="card" style="margin-bottom: 16px; padding: 14px 20px;">
         <div style="display:flex; flex-direction:column; gap:12px;">
           <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
-            <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:240px;">
-              <div style="position:relative; width:100%; max-width:320px;">
+            <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:240px; flex-wrap:wrap;">
+              <div style="position:relative; width:100%; max-width:260px;">
                 <input type="text" id="jobs-master-search-input" class="form-control" placeholder="企業名・求人名で検索" value="${this.escapeHtml(this.jobsMasterSearchKeyword)}" style="padding-left:32px;">
                 <i data-lucide="search" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-muted);"></i>
               </div>
-              <button id="btn-toggle-jobs-filter" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:4px;">
+
+              <!-- 企業選択ドロップダウン (表示企業の絞り込み) -->
+              <select id="jobs-master-company-select" class="form-select" style="width:200px; font-size:12px; height:36px;">
+                <option value="">すべての企業 (${uniqueCompanies.length}社)</option>
+                ${uniqueCompanies.map(c => {
+                  const val = c.companyId || c.companyName;
+                  const isSel = (this.jobsMasterFilters.companies || []).includes(val);
+                  return `<option value="${this.escapeHtml(val)}" ${isSel ? 'selected' : ''}>${this.escapeHtml(c.companyName)} (${c.count}件)</option>`;
+                }).join('')}
+              </select>
+
+              <button id="btn-toggle-jobs-filter" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:4px; height:36px;">
                 <i data-lucide="filter" style="width:14px;height:14px;"></i> 絞り込み
                 ${activeFilterCount > 0 ? `<span class="badge badge-gold" style="padding:1px 5px;">${activeFilterCount}</span>` : ''}
               </button>
               ${this.jobsMasterSearchKeyword || activeFilterCount > 0 ? `
-                <button id="btn-clear-jobs-search" class="btn btn-secondary btn-sm">クリア</button>
+                <button id="btn-clear-jobs-search" class="btn btn-secondary btn-sm" style="height:36px;">クリア</button>
               ` : ''}
             </div>
 
             <div style="display:flex; align-items:center; gap:8px;">
               <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">並び替え:</span>
-              <select id="jobs-master-sort-select" class="form-select" style="width:190px; font-size:12px;">
-                <option value="company_asc" ${this.jobsMasterSortBy === 'company_asc' ? 'selected' : ''}>企業名順：昇順</option>
+              <select id="jobs-master-sort-select" class="form-select" style="width:190px; font-size:12px; height:36px;">
+                <option value="company_asc" ${(this.jobsMasterSortBy || 'company_asc') === 'company_asc' ? 'selected' : ''}>企業名順：昇順 (五十音順)</option>
                 <option value="company_desc" ${this.jobsMasterSortBy === 'company_desc' ? 'selected' : ''}>企業名順：降順</option>
                 <option value="job_title_asc" ${this.jobsMasterSortBy === 'job_title_asc' ? 'selected' : ''}>求人名順：昇順</option>
                 <option value="job_title_desc" ${this.jobsMasterSortBy === 'job_title_desc' ? 'selected' : ''}>求人名順：降順</option>
@@ -5372,6 +5420,17 @@ class AppController {
 
             <div class="grid-3" style="gap:12px;">
               <div class="form-group" style="margin-bottom:8px;">
+                <label class="form-label" style="font-size:11.5px;">企業名 (複数選択可)</label>
+                <div style="max-height:100px; overflow-y:auto; font-size:12px; background:#FFF; border:1px solid #CBD5E0; padding:6px; border-radius:4px;">
+                  ${uniqueCompanies.map(c => {
+                    const val = c.companyId || c.companyName;
+                    const isChecked = (this.jobsMasterFilters.companies || []).includes(val);
+                    return `<label style="display:block; margin-bottom:2px;"><input type="checkbox" class="chk-filter-company" value="${this.escapeHtml(val)}" ${isChecked ? 'checked' : ''}> ${this.escapeHtml(c.companyName)} (${c.count})</label>`;
+                  }).join('')}
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom:8px;">
                 <label class="form-label" style="font-size:11.5px;">業種</label>
                 <div style="max-height:100px; overflow-y:auto; font-size:12px; background:#FFF; border:1px solid #CBD5E0; padding:6px; border-radius:4px;">
                   ${INDUSTRIES.map(ind => `
@@ -5385,15 +5444,6 @@ class AppController {
                 <div style="max-height:100px; overflow-y:auto; font-size:12px; background:#FFF; border:1px solid #CBD5E0; padding:6px; border-radius:4px;">
                   ${POSITIONS.map(pos => `
                     <label style="display:block; margin-bottom:2px;"><input type="checkbox" class="chk-filter-position" value="${pos}" ${this.jobsMasterFilters.positions.includes(pos) ? 'checked' : ''}> ${pos}</label>
-                  `).join('')}
-                </div>
-              </div>
-
-              <div class="form-group" style="margin-bottom:8px;">
-                <label class="form-label" style="font-size:11.5px;">求人ステータス</label>
-                <div style="font-size:12px; background:#FFF; border:1px solid #CBD5E0; padding:6px; border-radius:4px;">
-                  ${JOB_STATUSES.map(st => `
-                    <label style="display:block; margin-bottom:2px;"><input type="checkbox" class="chk-filter-status" value="${st}" ${this.jobsMasterFilters.statuses.includes(st) ? 'checked' : ''}> ${st}</label>
                   `).join('')}
                 </div>
               </div>
@@ -5535,9 +5585,15 @@ class AppController {
       this.renderCurrentView();
     });
 
+    container.querySelector('#jobs-master-company-select')?.addEventListener('change', (e) => {
+      const val = e.target.value;
+      this.jobsMasterFilters.companies = val ? [val] : [];
+      this.renderCurrentView();
+    });
+
     container.querySelector('#btn-clear-jobs-search')?.addEventListener('click', () => {
       this.jobsMasterSearchKeyword = '';
-      this.jobsMasterFilters = { industries: [], positions: [], statuses: [], targetAges: [], roles: [], salaryRanges: [], priorityRanks: [] };
+      this.jobsMasterFilters = { companies: [], industries: [], positions: [], statuses: [], targetAges: [], roles: [], salaryRanges: [], priorityRanks: [] };
       this.renderCurrentView();
     });
 
@@ -5552,6 +5608,7 @@ class AppController {
     });
 
     container.querySelector('#btn-apply-filter-drawer')?.addEventListener('click', () => {
+      this.jobsMasterFilters.companies = Array.from(container.querySelectorAll('.chk-filter-company:checked')).map(el => el.value);
       this.jobsMasterFilters.industries = Array.from(container.querySelectorAll('.chk-filter-industry:checked')).map(el => el.value);
       this.jobsMasterFilters.positions = Array.from(container.querySelectorAll('.chk-filter-position:checked')).map(el => el.value);
       this.jobsMasterFilters.statuses = Array.from(container.querySelectorAll('.chk-filter-status:checked')).map(el => el.value);
@@ -5562,7 +5619,7 @@ class AppController {
     });
 
     container.querySelector('#btn-reset-filter-drawer')?.addEventListener('click', () => {
-      this.jobsMasterFilters = { industries: [], positions: [], statuses: [], targetAges: [], roles: [], salaryRanges: [], priorityRanks: [] };
+      this.jobsMasterFilters = { companies: [], industries: [], positions: [], statuses: [], targetAges: [], roles: [], salaryRanges: [], priorityRanks: [] };
       this.renderCurrentView();
     });
 

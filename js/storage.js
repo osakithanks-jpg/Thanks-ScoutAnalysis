@@ -1000,7 +1000,7 @@ export class StorageService {
   /**
    * 求人マスタの検索・絞り込み・並び替え処理
    */
-  static filterAndSortJobs(jobsList, { searchKeyword = '', industries = [], positions = [], statuses = [], targetAges = [], roles = [], salaryRanges = [], priorityRanks = [], archived = false, sortBy = 'company_asc' } = {}) {
+  static filterAndSortJobs(jobsList, { searchKeyword = '', companies = [], industries = [], positions = [], statuses = [], targetAges = [], roles = [], salaryRanges = [], priorityRanks = [], archived = false, sortBy = 'company_asc' } = {}) {
     let result = jobsList.filter(j => Boolean(j.archived) === Boolean(archived));
 
     // 1. 検索（企業名, 企業名よみ, 求人名, 業種, 職種, 役割, 勤務地等のAND検索 & NFKC正規化）
@@ -1033,6 +1033,9 @@ export class StorageService {
     }
 
     // 2. 多重絞り込み (同一項目OR, 異項目AND)
+    if (companies.length > 0) {
+      result = result.filter(j => (j.companyId && companies.includes(j.companyId)) || (j.companyName && companies.includes(j.companyName)));
+    }
     if (industries.length > 0) result = result.filter(j => j.industry && industries.includes(j.industry));
     if (positions.length > 0) result = result.filter(j => j.position && positions.includes(j.position));
     if (statuses.length > 0) result = result.filter(j => j.status && statuses.includes(j.status));
