@@ -3210,60 +3210,238 @@ class AppController {
   }
 
   renderJobComparison(container) {
-    const jobs = StorageService.getActiveJobs();
+    if (!this.selectedCompareJobIds) {
+      this.selectedCompareJobIds = new Set();
+    }
 
     container.innerHTML = `
-      <div class="card">
-        <h4 class="card-title"><i data-lucide="git-compare"></i> 求人比較 (2〜5件選択)</h4>
-        <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:16px;">
-          ${jobs.map(j => `
-            <label style="font-size:13px; display:inline-flex; align-items:center; gap:6px; background:#F8F6F2; padding:6px 12px; border-radius:4px;">
-              <input type="checkbox" class="chk-job-compare" value="${j.jobId}">
-              ${this.escapeHtml(j.companyName)} / ${this.escapeHtml(j.jobTitle)}
-            </label>
-          `).join('')}
+      <div class="card compare-selector-card">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+          <div>
+            <h4 class="card-title" style="margin-bottom:2px;"><i data-lucide="git-compare"></i> 求人比較 (2〜5件選択)</h4>
+            <p style="font-size:12px; color:var(--text-secondary); margin:0;">
+              比較したい求人を一覧から選択してください。検索バーや並び替え機能で絞り込むことができます。
+            </p>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span id="compare-counter" style="font-size:13px; font-weight:700; color:var(--color-navy-main); background:#F8F6F2; padding:4px 10px; border-radius:4px; border:1px solid #E6D5B8;">
+              選択中: ${this.selectedCompareJobIds.size} / 5件
+            </span>
+            <button id="btn-clear-compare-all" class="btn btn-secondary btn-sm" ${this.selectedCompareJobIds.size === 0 ? 'disabled' : ''}>全選択解除</button>
+            <button id="btn-run-compare" class="btn btn-gold" ${this.selectedCompareJobIds.size < 2 || this.selectedCompareJobIds.size > 5 ? 'disabled' : ''}>
+              <i data-lucide="bar-chart-2"></i> 比較を実行
+            </button>
+          </div>
         </div>
-        <button id="btn-run-compare" class="btn btn-gold" style="margin-top:16px;"><i data-lucide="bar-chart-2"></i> 比較を実行</button>
+
+        <!-- 選択中求人チップ一覧エリア -->
+        <div id="compare-chips-area"></div>
+
+        <!-- 検索バー ＆ ソートコントローラー -->
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+          <div style="position:relative; flex:1; min-width:220px; max-width:340px;">
+            <input type="text" id="compare-search-input" class="form-control" placeholder="企業名・求人名で検索..." value="${this.escapeHtml(this.compareSearchKeyword || '')}" style="padding-left:30px; font-size:12px; height:32px;">
+            <i data-lucide="search" style="position:absolute; left:9px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-muted);"></i>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">並び替え:</span>
+            <select id="compare-sort-select" class="form-select" style="width:180px; font-size:12px; height:32px; padding:2px 8px;">
+              <option value="company_asc" ${(this.compareSortBy || 'company_asc') === 'company_asc' ? 'selected' : ''}>企業名五十音順 (昇順)</option>
+              <option value="company_desc" ${this.compareSortBy === 'company_desc' ? 'selected' : ''}>企業名五十音順 (降順)</option>
+              <option value="rank_desc" ${this.compareSortBy === 'rank_desc' ? 'selected' : ''}>注力ランク順 (高い順)</option>
+              <option value="job_title_asc" ${this.compareSortBy === 'job_title_asc' ? 'selected' : ''}>求人名順 (昇順)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 1列並びスクロールリスト -->
+        <div id="compare-scroll-list-wrapper" class="compare-scroll-list"></div>
       </div>
+
       <div id="job-compare-result"></div>
     `;
 
+    this.bindCompareSelectorEvents(container);
+    this.updateCompareSelectorUI(container);
+  }
+
+  updateCompareSelectorUI(container) {
+    const allJobs = StorageService.getActiveJobs();
+    const allJobsMap = new Map(allJobs.map(j => [j.jobId, j]));
+
+    // 1. 選択中チップ一覧の更新
+    const chipsArea = container.querySelector('#compare-chips-area');
+    if (chipsArea) {
+      if (this.selectedCompareJobIds.size === 0) {
+        chipsArea.innerHTML = `
+          <div class="selected-jobs-container" style="color:var(--text-muted); font-size:12px;">
+            <i data-lucide="info" style="width:14px;height:14px;"></i> 下記の求人一覧から比較したい求人をチェックしてください (2〜5件)
+          </div>
+        `;
+      } else {
+        const chipsHtml = Array.from(this.selectedCompareJobIds).map(jobId => {
+          const job = allJobsMap.get(jobId);
+          if (!job) return '';
+          return `
+            <span class="selected-job-chip">
+              ${this.escapeHtml(job.companyName)} / ${this.escapeHtml(job.jobTitle)}
+              <button class="btn-remove-chip" data-remove-id="${job.jobId}" title="選択解除">&times;</button>
+            </span>
+          `;
+        }).join('');
+
+        chipsArea.innerHTML = `
+          <div class="selected-jobs-container">
+            ${chipsHtml}
+          </div>
+        `;
+      }
+    }
+
+    // 2. カウンター・ボタン制御
+    const counterEl = container.querySelector('#compare-counter');
+    if (counterEl) {
+      counterEl.textContent = `選択中: ${this.selectedCompareJobIds.size} / 5件`;
+      if (this.selectedCompareJobIds.size >= 2 && this.selectedCompareJobIds.size <= 5) {
+        counterEl.style.borderColor = 'var(--color-gold-accent)';
+        counterEl.style.color = 'var(--color-gold-hover)';
+      } else {
+        counterEl.style.borderColor = '#E6D5B8';
+        counterEl.style.color = 'var(--color-navy-main)';
+      }
+    }
+
+    const clearBtn = container.querySelector('#btn-clear-compare-all');
+    if (clearBtn) clearBtn.disabled = this.selectedCompareJobIds.size === 0;
+
+    const runBtn = container.querySelector('#btn-run-compare');
+    if (runBtn) runBtn.disabled = this.selectedCompareJobIds.size < 2 || this.selectedCompareJobIds.size > 5;
+
+    // 3. スクロールリストの絞り込み・ソート
+    const listWrapper = container.querySelector('#compare-scroll-list-wrapper');
+    if (listWrapper) {
+      const filteredJobs = StorageService.filterAndSortJobs(allJobs, {
+        searchKeyword: this.compareSearchKeyword || '',
+        sortBy: this.compareSortBy || 'company_asc',
+        archived: false
+      });
+
+      if (filteredJobs.length === 0) {
+        listWrapper.innerHTML = `
+          <div style="padding:24px; text-align:center; color:var(--text-muted); font-size:12.5px; font-weight:600;">
+            検索条件に一致する求人はありません
+          </div>
+        `;
+      } else {
+        listWrapper.innerHTML = filteredJobs.map(j => {
+          const isChecked = this.selectedCompareJobIds.has(j.jobId);
+          const rankBadgeHtml = this.renderPriorityRankBadge(j.priorityRank, false);
+          return `
+            <div class="compare-job-row ${isChecked ? 'selected' : ''}" data-job-id="${j.jobId}">
+              <label class="compare-job-row-label">
+                <input type="checkbox" class="chk-compare-item" value="${j.jobId}" ${isChecked ? 'checked' : ''} style="cursor:pointer; width:15px; height:15px;">
+                <div class="compare-job-info">
+                  <span class="compare-job-company">${this.escapeHtml(j.companyName)}</span>
+                  <span class="compare-job-title">${this.escapeHtml(j.jobTitle)}</span>
+                  ${rankBadgeHtml}
+                </div>
+              </label>
+              <span class="badge ${j.status === 'スカウト実施中' ? 'badge-success' : j.status === '準備中' ? 'badge-gold' : 'badge-gray'}" style="font-size:10px; padding:2px 6px;">${j.status}</span>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+    this.bindCompareListRowEvents(container);
+  }
+
+  bindCompareSelectorEvents(container) {
+    const searchInp = container.querySelector('#compare-search-input');
+    searchInp?.addEventListener('input', (e) => {
+      this.compareSearchKeyword = e.target.value;
+      this.updateCompareSelectorUI(container);
+    });
+
+    container.querySelector('#compare-sort-select')?.addEventListener('change', (e) => {
+      this.compareSortBy = e.target.value;
+      this.updateCompareSelectorUI(container);
+    });
+
+    container.querySelector('#btn-clear-compare-all')?.addEventListener('click', () => {
+      this.selectedCompareJobIds.clear();
+      this.updateCompareSelectorUI(container);
+    });
+
     container.querySelector('#btn-run-compare')?.addEventListener('click', () => {
-      const checkedVals = Array.from(container.querySelectorAll('.chk-job-compare:checked')).map(el => el.value);
-      if (checkedVals.length < 2 || checkedVals.length > 5) {
+      const selectedIds = Array.from(this.selectedCompareJobIds);
+      if (selectedIds.length < 2 || selectedIds.length > 5) {
         alert('比較する求人は2件から5件を選択してください。');
         return;
       }
 
-      const compared = AnalyticsService.compareJobs(checkedVals);
+      const compared = AnalyticsService.compareJobs(selectedIds);
       const resContainer = container.querySelector('#job-compare-result');
       resContainer.innerHTML = `
         <div class="card">
-          <h4 class="card-title">求人比較結果</h4>
-          <table class="data-table" style="margin-top:16px;">
-            <thead>
-              <tr>
-                <th>項目</th>
-                ${compared.map(c => `<th>${this.escapeHtml(c.job.companyName)}<br><span style="font-size:11px;font-weight:normal;">${this.escapeHtml(c.job.jobTitle)}</span></th>`).join('')}
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td>注力ランク</td>${compared.map(c => `<td>${this.renderPriorityRankBadge(c.job.priorityRank, false)}</td>`).join('')}</tr>
-              <tr><td>業種</td>${compared.map(c => `<td>${c.job.industry || '-'}</td>`).join('')}</tr>
-              <tr><td>職種</td>${compared.map(c => `<td>${c.job.position || '-'}</td>`).join('')}</tr>
-              <tr><td>ステータス</td>${compared.map(c => `<td><span class="badge badge-navy">${c.job.status}</span></td>`).join('')}</tr>
-              <tr><td>対象年齢</td>${compared.map(c => `<td>${(c.job.targetAge || []).join('、') || '-'}</td>`).join('')}</tr>
-              <tr><td>役職</td>${compared.map(c => `<td>${c.job.role || '-'}</td>`).join('')}</tr>
-              <tr><td>年収帯</td>${compared.map(c => `<td>${(c.job.salaryRange || []).join('、') || '-'}</td>`).join('')}</tr>
-              <tr><td>送信数</td>${compared.map(c => `<td>${c.metrics.sentCount}件</td>`).join('')}</tr>
-              <tr><td>有効返信数</td>${compared.map(c => `<td><strong style="color:var(--color-gold-accent);">${c.metrics.effectiveReplyCount}件</strong></td>`).join('')}</tr>
-              <tr><td>参考有効返信率</td>${compared.map(c => `<td>${c.metrics.effectiveReplyRateFormatted}</td>`).join('')}</tr>
-              <tr><td>主な利用媒体</td>${compared.map(c => `<td>${c.mainMedia}</td>`).join('')}</tr>
-              <tr><td>ナレッジ件数</td>${compared.map(c => `<td>${c.knowledgeCount}件</td>`).join('')}</tr>
-            </tbody>
-          </table>
+          <h4 class="card-title"><i data-lucide="table"></i> 求人比較結果 (${compared.length}件)</h4>
+          <div style="overflow-x:auto; margin-top:16px;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="min-width:120px;">項目</th>
+                  ${compared.map(c => `<th><strong>${this.escapeHtml(c.job.companyName)}</strong><br><span style="font-size:11px;font-weight:normal;color:var(--text-secondary);">${this.escapeHtml(c.job.jobTitle)}</span></th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>注力ランク</td>${compared.map(c => `<td>${this.renderPriorityRankBadge(c.job.priorityRank, false)}</td>`).join('')}</tr>
+                <tr><td>業種</td>${compared.map(c => `<td>${c.job.industry || '-'}</td>`).join('')}</tr>
+                <tr><td>職種</td>${compared.map(c => `<td>${c.job.position || '-'}</td>`).join('')}</tr>
+                <tr><td>ステータス</td>${compared.map(c => `<td><span class="badge ${c.job.status === 'スカウト実施中' ? 'badge-success' : 'badge-gray'}">${c.job.status}</span></td>`).join('')}</tr>
+                <tr><td>対象年齢</td>${compared.map(c => `<td>${(c.job.targetAge || []).join('、') || '-'}</td>`).join('')}</tr>
+                <tr><td>役職</td>${compared.map(c => `<td>${c.job.role || '-'}</td>`).join('')}</tr>
+                <tr><td>年収帯</td>${compared.map(c => `<td>${(c.job.salaryRange || []).join('、') || '-'}</td>`).join('')}</tr>
+                <tr><td>送信数</td>${compared.map(c => `<td><strong>${c.metrics.sentCount}件</strong></td>`).join('')}</tr>
+                <tr><td>有効返信数</td>${compared.map(c => `<td><strong style="color:var(--color-gold-accent);">${c.metrics.effectiveReplyCount}件</strong></td>`).join('')}</tr>
+                <tr><td>参考有効返信率</td>${compared.map(c => `<td><strong>${c.metrics.effectiveReplyRateFormatted}</strong></td>`).join('')}</tr>
+                <tr><td>主な利用媒体</td>${compared.map(c => `<td>${c.mainMedia}</td>`).join('')}</tr>
+                <tr><td>ナレッジ件数</td>${compared.map(c => `<td>${c.knowledgeCount}件</td>`).join('')}</tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       `;
+      if (window.lucide) window.lucide.createIcons();
+    });
+  }
+
+  bindCompareListRowEvents(container) {
+    container.querySelectorAll('.btn-remove-chip').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const removeId = btn.getAttribute('data-remove-id');
+        this.selectedCompareJobIds.delete(removeId);
+        this.updateCompareSelectorUI(container);
+      });
+    });
+
+    container.querySelectorAll('.chk-compare-item').forEach(chk => {
+      chk.addEventListener('change', () => {
+        const jobId = chk.value;
+        if (chk.checked) {
+          if (this.selectedCompareJobIds.size >= 5) {
+            alert('比較できる求人は最大5件までです。');
+            chk.checked = false;
+            return;
+          }
+          this.selectedCompareJobIds.add(jobId);
+        } else {
+          this.selectedCompareJobIds.delete(jobId);
+        }
+        this.updateCompareSelectorUI(container);
+      });
     });
   }
 
