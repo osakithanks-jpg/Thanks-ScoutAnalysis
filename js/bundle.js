@@ -561,31 +561,71 @@ class StorageService {
       throw new Error('スプレッドシート内に有効なデータ行が見つかりませんでした。対象シート（タブ名）をご確認ください。');
     }
 
-    const headers = rows[0].map(h => h.trim());
-    const dataRows = rows.slice(1);
+    // 1. 全行の中から「企業名」「職種」「案件」「顧客群」等のキーワードが最も多く含まれる行をヘッダー行として自動検索
+    let headerRowIdx = -1;
+    let maxMatchCount = 0;
 
-    // カラム位置のマッピング判定
+    for (let r = 0; r < Math.min(rows.length, 30); r++) {
+      const row = rows[r];
+      let matchCount = 0;
+      row.forEach(cell => {
+        if (/企業名|クライアント|会社名/.test(cell)) matchCount += 4;
+        if (/職種|求人|ポジション|案件/.test(cell)) matchCount += 4;
+        if (/顧客群|注力|緊急度/.test(cell)) matchCount += 2;
+        if (/ステータス|進捗|担当|年収/.test(cell)) matchCount += 1;
+      });
+      if (matchCount > maxMatchCount && matchCount >= 3) {
+        maxMatchCount = matchCount;
+        headerRowIdx = r;
+      }
+    }
+
+    if (headerRowIdx === -1) {
+      headerRowIdx = 0;
+    }
+
+    const headers = rows[headerRowIdx].map(h => h.trim());
+    const dataRows = rows.slice(headerRowIdx + 1);
+
+    // カラム位置のマッピング判定 (表記ゆれ ＆ 実際の「15期総合チーム共有シート」のC列/E列/G列/H列に自動対応)
     const colMap = {
-      companyName: headers.findIndex(h => /企業|クライアント|会社/.test(h)),
+      companyName: headers.findIndex(h => /企業名|クライアント|会社名/.test(h)),
+      jobTitle: headers.findIndex(h => /^職種$|職種名|案件名|求人名|ポジション/.test(h)),
+      priorityRank: headers.findIndex(h => /^案件$|緊急度|注力|優先/.test(h)),
+      customerGroup: headers.findIndex(h => /顧客群/.test(h)),
       companyNameKana: headers.findIndex(h => /よみ|ふりがな|フリガナ/.test(h)),
-      jobTitle: headers.findIndex(h => /案件|求人|ポジション|タイトル|職種名/.test(h)),
       industry: headers.findIndex(h => /業種|業界|事業/.test(h)),
-      position: headers.findIndex(h => /職種|カテゴリ/.test(h)),
-      status: headers.findIndex(h => /ステータス|状況|フェーズ/.test(h)),
+      position: headers.findIndex(h => /カテゴリ/.test(h)),
+      status: headers.findIndex(h => /ステータス|状況|フェーズ|進捗/.test(h)),
       targetAge: headers.findIndex(h => /年齢|対象/.test(h)),
       role: headers.findIndex(h => /役職|ランク/.test(h)),
       salaryRange: headers.findIndex(h => /年収|給料|条件/.test(h)),
-      priorityRank: headers.findIndex(h => /注力|優先/.test(h)),
       staffName: headers.findIndex(h => /担当|コンサルタント|営業/.test(h))
     };
+
+    // フォールバックインデックス（固定位置対応）
+    if (colMap.companyName === -1) colMap.companyName = 2; // C列: 企業名
+    if (colMap.jobTitle === -1) colMap.jobTitle = 4; // E列: 職種
+    if (colMap.customerGroup === -1) colMap.customerGroup = 6; // G列: 顧客群
+    if (colMap.priorityRank === -1) colMap.priorityRank = 7; // H列: 案件
 
     const parsedJobs = dataRows.map((row, idx) => {
       const getVal = (colIndex) => (colIndex >= 0 && row[colIndex] ? row[colIndex].trim() : '');
 
       const companyName = getVal(colMap.companyName);
-      const jobTitle = getVal(colMap.jobTitle) || '案件情報';
+      const jobTitle = getVal(colMap.jobTitle);
 
-      if (!companyName && !jobTitle) return null;
+      // セクション見出し行や無効行のスキップ（「■新規獲得求人」「▼稼働求人一覧」「企業名」などのノイズを除去）
+      if (!companyName || /■|▼|企業名|新規獲得求人|稼働求人一覧|顧客群|No/.test(companyName)) return null;
+      if (!jobTitle || /職種|背景/.test(jobTitle)) return null;
+
+      // 注力ランクの判定（H列「案件」またはG列「顧客群」より判定）
+      let rawRank = getVal(colMap.priorityRank) || getVal(colMap.customerGroup);
+      let priorityRank = 'UNSET';
+      if (/専属S|SS/.test(rawRank)) priorityRank = 'SS';
+      else if (/S|S候補/.test(rawRank)) priorityRank = 'S';
+      else if (/^A$/.test(rawRank)) priorityRank = 'A';
+      else if (/^B$/.test(rawRank)) priorityRank = 'B';
 
       // 対象年齢のパース
       const rawAge = getVal(colMap.targetAge);
@@ -611,26 +651,16 @@ class StorageService {
         if (salaryRange.length === 0 && rawSalary) salaryRange = [rawSalary];
       }
 
-      // ステータスのパース・標準化
+      // ステータスの標準化
       let status = getVal(colMap.status) || 'スカウト実施中';
       if (/準備/.test(status)) status = '準備中';
       else if (/一時停止|停止|中断/.test(status)) status = '一時停止';
       else if (/終了|決定|完了/.test(status)) status = '募集終了';
-      else if (/実施|進行|アクティブ|公開/.test(status)) status = 'スカウト実施中';
-
-      // 注力ランクのパース
-      let priorityRank = getVal(colMap.priorityRank);
-      if (!PRIORITY_RANKS[priorityRank]) {
-        if (/SS|最重要|最優先/.test(priorityRank)) priorityRank = 'SS';
-        else if (/S|重要/.test(priorityRank)) priorityRank = 'S';
-        else if (/A/.test(priorityRank)) priorityRank = 'A';
-        else if (/B/.test(priorityRank)) priorityRank = 'B';
-        else priorityRank = 'UNSET';
-      }
+      else status = 'スカウト実施中';
 
       return {
-        rowIndex: idx + 2,
-        companyName: companyName || '不明企業',
+        rowIndex: headerRowIdx + idx + 2,
+        companyName,
         companyNameKana: getVal(colMap.companyNameKana),
         jobTitle,
         industry: getVal(colMap.industry) || 'メーカー',
