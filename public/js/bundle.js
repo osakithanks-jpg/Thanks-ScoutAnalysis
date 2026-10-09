@@ -722,10 +722,7 @@ class StorageService {
     const userMapByName = new Map(users.map(u => [u.name.trim(), u.staffId]));
 
     for (const item of parsedJobs) {
-      const existingJob = StorageService.getJobs().find(j => 
-        j.companyName.trim() === item.companyName.trim() && 
-        j.jobTitle.trim() === item.jobTitle.trim()
-      );
+      const existingJob = StorageService.findMatchingJob(item.companyName, item.jobTitle);
 
       const savedJob = StorageService.saveJob({
         jobId: existingJob ? existingJob.jobId : '',
@@ -788,6 +785,161 @@ class StorageService {
       createdCount,
       updatedCount,
       lastSyncAt: nowIso
+    };
+  }
+
+  /**
+   * 文字列の表記揺れ正規化 (全角半角・空白・株式会社等の除去)
+   */
+  static normalizeString(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xfee0))
+      .replace(/[\s\u3000]/g, '')
+      .replace(/株式会社|有限会社|\(株\)|（株）|\(有\)|（有）/g, '')
+      .toLowerCase();
+  }
+
+  /**
+   * 表記揺れに対応した既存求人のスマート・マッチング
+   */
+  static findMatchingJob(companyName, jobTitle) {
+    const jobs = this.getJobs();
+    const normCompany = this.normalizeString(companyName);
+    const normTitle = this.normalizeString(jobTitle);
+
+    if (!normCompany || !normTitle) return null;
+
+    // 1. 完全一致・トリム一致
+    let match = jobs.find(j => 
+      j.companyName.trim() === companyName.trim() && 
+      j.jobTitle.trim() === jobTitle.trim()
+    );
+    if (match) return match;
+
+    // 2. 正規化後の社名・求人名一致
+    match = jobs.find(j => 
+      this.normalizeString(j.companyName) === normCompany && 
+      this.normalizeString(j.jobTitle) === normTitle
+    );
+    return match || null;
+  }
+
+  /**
+   * 2つの求人を統合・実績・担当・ナレッジを全移植する処理
+   */
+  static mergeJobs(sourceJobId, targetJobId, operatorStaffId = '') {
+    if (!sourceJobId || !targetJobId || sourceJobId === targetJobId) {
+      throw new Error('移行元求人と移行先求人を正しく選択してください。');
+    }
+
+    const sourceJob = this.getJobById(sourceJobId);
+    const targetJob = this.getJobById(targetJobId);
+
+    if (!sourceJob || !targetJob) {
+      throw new Error('選択された求人が存在しません。');
+    }
+
+    let migratedResultsCount = 0;
+    let migratedAutoCount = 0;
+    let migratedInboundCount = 0;
+    let migratedKnowledgeCount = 0;
+    let migratedUserJobsCount = 0;
+
+    // 1. スカウト実績 (results) の移植
+    const results = this.getScoutResults();
+    results.forEach(r => {
+      if (r.jobId === sourceJobId) {
+        const existingKey = `${r.staffId}_${targetJobId}_${r.date}_${r.mediaId}`;
+        const existingIdx = results.findIndex(targetR => targetR.resultId === existingKey && targetR.status === 'valid');
+
+        if (existingIdx >= 0) {
+          results[existingIdx].sentCount += Number(r.sentCount || 0);
+          results[existingIdx].totalReplyCount += Number(r.totalReplyCount || 0);
+          results[existingIdx].effectiveReplyCount += Number(r.effectiveReplyCount || 0);
+          results[existingIdx].updatedAt = new Date().toISOString();
+          r.status = 'invalid';
+        } else {
+          r.jobId = targetJobId;
+          r.resultId = existingKey;
+          r.updatedAt = new Date().toISOString();
+        }
+        migratedResultsCount++;
+      }
+    });
+    this.set(KEYS.RESULTS, results);
+
+    // 2. 自動スカウト実績 (auto_weekly_results) の移植
+    const autoResults = this.get(KEYS.AUTO_RESULTS);
+    autoResults.forEach(r => {
+      if (r.jobId === sourceJobId) {
+        r.jobId = targetJobId;
+        r.resultId = `${targetJobId}_${r.mediaId}_${r.weekStartDate}`;
+        migratedAutoCount++;
+      }
+    });
+    this.set(KEYS.AUTO_RESULTS, autoResults);
+
+    // 3. インバウンド実績 (inbound_results) の移植
+    const inboundResults = this.get(KEYS.INBOUND_RESULTS);
+    inboundResults.forEach(r => {
+      if (r.jobId === sourceJobId) {
+        r.jobId = targetJobId;
+        r.resultId = `${targetJobId}_${r.routeId}_${r.date}`;
+        migratedInboundCount++;
+      }
+    });
+    this.set(KEYS.INBOUND_RESULTS, inboundResults);
+
+    // 4. 共有ナレッジ (knowledge) の移植
+    const knowledge = this.getKnowledgeList();
+    knowledge.forEach(k => {
+      if (k.jobId === sourceJobId) {
+        k.jobId = targetJobId;
+        k.updatedAt = new Date().toISOString();
+        migratedKnowledgeCount++;
+      }
+    });
+    this.set(KEYS.KNOWLEDGE, knowledge);
+
+    // 5. 担当者アサイン (user_jobs) の統合
+    const userJobs = this.getUserJobs();
+    const sourceUserJobs = userJobs.filter(uj => uj.jobId === sourceJobId);
+    sourceUserJobs.forEach(uj => {
+      this.addUserJob(uj.staffId, targetJobId);
+      migratedUserJobsCount++;
+    });
+
+    // 6. 移行元求人のアーカイブ化 (非表示化)
+    const jobs = this.getJobs();
+    const sIdx = jobs.findIndex(j => j.jobId === sourceJobId);
+    if (sIdx >= 0) {
+      jobs[sIdx].archived = true;
+      jobs[sIdx].status = '募集終了';
+      jobs[sIdx].notes = `求人「${targetJob.companyName} / ${targetJob.jobTitle}」へ実績データ統合済み`;
+      jobs[sIdx].updatedAt = new Date().toISOString();
+      this.set(KEYS.JOBS, jobs);
+    }
+
+    // 7. 変更履歴の記録
+    try {
+      StorageService.addChangeLog({
+        targetType: 'job_merge',
+        targetId: targetJobId,
+        actionType: 'merge',
+        staffId: operatorStaffId || 'SYSTEM',
+        notes: `求人「${sourceJob.companyName} / ${sourceJob.jobTitle}」の実績データを「${targetJob.companyName} / ${targetJob.jobTitle}」へ統合完了`
+      });
+    } catch (e) {}
+
+    return {
+      sourceJob,
+      targetJob,
+      migratedResultsCount,
+      migratedAutoCount,
+      migratedInboundCount,
+      migratedKnowledgeCount,
+      migratedUserJobsCount
     };
   }
 
@@ -5772,6 +5924,9 @@ class AppController {
               <button id="btn-open-google-sheets-sync-modal" class="btn btn-navy btn-sm" style="display:inline-flex; align-items:center; gap:4px; height:36px; background:var(--color-navy-main); border-color:var(--color-gold-accent);" title="スプレッドシート（【15期】総合チーム共有シート）から求人・案件データを自動取り込み">
                 <i data-lucide="file-spreadsheet" style="width:14px;height:14px;color:var(--color-gold-accent);"></i> 【15期】シートから同期
               </button>
+              <button id="btn-open-merge-jobs-modal" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:4px; height:36px;" title="手入力求人のスカウト実績・ナレッジを吸い上げた正規求人へ全移行統合します">
+                <i data-lucide="git-merge" style="width:14px;height:14px;"></i> 実績データの統合
+              </button>
               <button id="btn-open-create-job-modal" class="btn btn-gold btn-sm" style="display:inline-flex; align-items:center; gap:4px; height:36px;">
                 <i data-lucide="plus-circle" style="width:14px;height:14px;"></i> 新規求人を登録
               </button>
@@ -5952,6 +6107,10 @@ class AppController {
     // イベントバインド
     container.querySelector('#btn-open-google-sheets-sync-modal')?.addEventListener('click', () => {
       this.openGoogleSheetsSyncModal();
+    });
+
+    container.querySelector('#btn-open-merge-jobs-modal')?.addEventListener('click', () => {
+      this.openMergeJobsModal();
     });
 
     container.querySelector('#btn-admin-manage-staff')?.addEventListener('click', () => {
@@ -8399,6 +8558,134 @@ class AppController {
         execBtn.disabled = false;
         execBtn.innerHTML = '<i data-lucide="refresh-cw"></i> スプレッドシートから同期（DB反映）';
         if (window.lucide) window.lucide.createIcons();
+      }
+    };
+  }
+
+  openMergeJobsModal() {
+    const allJobs = StorageService.getJobs();
+    const activeJobs = allJobs.filter(j => !j.archived);
+
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 680px;">
+          <div class="modal-header">
+            <h3 class="modal-title"><i data-lucide="git-merge" style="color:var(--color-gold-accent);"></i> 求人統合・スカウト実績データ移行</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body" style="font-size:13px; line-height:1.6;">
+            <div style="background:var(--color-bg-secondary); padding:12px 16px; border-radius:6px; border:1px solid var(--border-light); margin-bottom:16px;">
+              <p style="margin:0; font-weight:700; color:var(--color-navy-main);">■ 重複求人の実績統合（マージ）機能</p>
+              <p style="margin:4px 0 0 0; font-size:12px; color:var(--text-secondary);">手入力された重複求人のスカウト送信・返信実績、自動実績、ナレッジ、担当者アサインを、吸い上げた正規の求人へすべて移行・紐付け変更します。</p>
+              <p style="margin:4px 0 0 0; font-size:11px; color:var(--color-gold-hover);">※移行完了後、移行元の旧求人は自動的に「募集終了 (アーカイブ)」へ変更されます。</p>
+            </div>
+
+            <div class="form-group" style="margin-bottom:14px;">
+              <label class="form-label" style="font-weight:700; color:var(--color-danger);">① 移行元（統合後に非表示化される手入力等の重複求人） <span style="color:var(--color-danger);">*</span></label>
+              <select id="merge-source-job-id" class="form-select">
+                <option value="">-- 移行元求人を選択 --</option>
+                ${allJobs.map(j => `
+                  <option value="${j.jobId}">${this.escapeHtml(j.companyName)} / ${this.escapeHtml(j.jobTitle)} (${j.priorityRank}) ${j.archived ? '[アーカイブ]' : ''}</option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div style="text-align:center; margin:10px 0;">
+              <i data-lucide="arrow-down" style="width:24px; height:24px; color:var(--color-gold-accent);"></i>
+            </div>
+
+            <div class="form-group" style="margin-bottom:16px;">
+              <label class="form-label" style="font-weight:700; color:var(--color-navy-main);">② 移行先（実績を引き継ぐ吸い上げ後の正本求人） <span style="color:var(--color-danger);">*</span></label>
+              <select id="merge-target-job-id" class="form-select">
+                <option value="">-- 移行先正本求人を選択 --</option>
+                ${activeJobs.map(j => `
+                  <option value="${j.jobId}">${this.escapeHtml(j.companyName)} / ${this.escapeHtml(j.jobTitle)} (${j.priorityRank})</option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div id="merge-preview-summary" style="display:none; background:#F7FAFC; border:1px solid #E2E8F0; padding:12px 16px; border-radius:6px; font-size:12px; margin-top:12px;">
+            </div>
+          </div>
+          <div class="modal-footer" style="display:flex; justify-content:space-between;">
+            <button class="btn btn-secondary modal-cancel">キャンセル</button>
+            <button id="btn-execute-merge-jobs" class="btn btn-gold" disabled><i data-lucide="git-merge"></i> 実績データを統合・引継ぎ実行</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    const sourceSelect = mContainer.querySelector('#merge-source-job-id');
+    const targetSelect = mContainer.querySelector('#merge-target-job-id');
+    const execBtn = mContainer.querySelector('#btn-execute-merge-jobs');
+    const previewBox = mContainer.querySelector('#merge-preview-summary');
+
+    const checkState = () => {
+      const sId = sourceSelect.value;
+      const tId = targetSelect.value;
+
+      if (!sId || !tId || sId === tId) {
+        execBtn.disabled = true;
+        previewBox.style.display = 'none';
+        if (sId && tId && sId === tId) {
+          previewBox.style.display = 'block';
+          previewBox.innerHTML = '<span style="color:var(--color-danger); font-weight:700;">移行元と移行先に同じ求人は選択できません。</span>';
+        }
+        return;
+      }
+
+      execBtn.disabled = false;
+      previewBox.style.display = 'block';
+
+      // プレビュー情報の集計
+      const results = StorageService.getScoutResults().filter(r => r.jobId === sId && r.status === 'valid');
+      const totalSent = results.reduce((acc, curr) => acc + (curr.sentCount || 0), 0);
+      const totalEff = results.reduce((acc, curr) => acc + (curr.effectiveReplyCount || 0), 0);
+      const knowledge = StorageService.getKnowledgeList().filter(k => k.jobId === sId);
+
+      previewBox.innerHTML = `
+        <div style="font-weight:700; color:var(--color-navy-main); margin-bottom:4px;">■ 移行プレビュー</div>
+        <div>移行元の過去スカウト実績: 手動 <strong>${results.length}</strong> 件 (累計送信: <strong>${totalSent}</strong>件 / 有効返信: <strong>${totalEff}</strong>件)</div>
+        <div>共有ナレッジ: <strong>${knowledge.length}</strong> 件</div>
+        <div style="margin-top:4px; color:var(--color-gold-hover); font-weight:700;">上記の全実績データが選択した移行先求人へ即時統合・引き継がれます。</div>
+      `;
+    };
+
+    sourceSelect.onchange = checkState;
+    targetSelect.onchange = checkState;
+
+    execBtn.onclick = () => {
+      const sId = sourceSelect.value;
+      const tId = targetSelect.value;
+
+      if (!sId || !tId || sId === tId) return;
+
+      if (!confirm('移行元の過去スカウト実績・ナレッジ・担当アサインを移行先へ統合します。よろしいですか？')) {
+        return;
+      }
+
+      execBtn.disabled = true;
+      execBtn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> 統合・移行中…';
+
+      try {
+        const res = StorageService.mergeJobs(sId, tId, this.currentStaff ? this.currentStaff.staffId : '');
+
+        closeModal();
+        this.showToast(`求人「${res.sourceJob.companyName} / ${res.sourceJob.jobTitle}」の実績データを「${res.targetJob.companyName} / ${res.targetJob.jobTitle}」へ統合完了しました！`, 'success');
+
+        this.renderCurrentView();
+      } catch (err) {
+        alert(`統合エラー: ${err.message}`);
+        execBtn.disabled = false;
+        execBtn.innerHTML = '<i data-lucide="git-merge"></i> 実績データを統合・引継ぎ実行';
       }
     };
   }
