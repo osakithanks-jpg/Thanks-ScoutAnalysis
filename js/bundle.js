@@ -161,7 +161,8 @@ const KEYS = {
   NOTIFICATIONS: 'tp_scout_notifications_v2',
   CHANGE_LOGS: 'tp_scout_change_logs_v2',
   SETTINGS: 'tp_scout_settings_v2',
-  CURRENT_STAFF_ID: 'tp_scout_current_staff_id_v2'
+  CURRENT_STAFF_ID: 'tp_scout_current_staff_id_v2',
+  SHEETS_SYNC: 'tp_scout_sheets_sync_v2'
 };
 
 
@@ -430,6 +431,271 @@ class StorageService {
         alert(`[Cloud Firestore保存エラー] ${key} のクラウド同期に失敗しました (${err.code || 'ERR'}): ${err.message}`);
       });
     }
+  }
+
+  // --- Google スプレッドシート連携・同期 (Google Sheets Sync) ---
+  static getSheetsSyncSettings() {
+    const defaultSettings = {
+      spreadsheetId: '',
+      tabName: '【新：15/1Q】案件一覧',
+      lastSyncAt: null,
+      lastSyncCount: 0,
+      autoAssignStaff: true
+    };
+    try {
+      const stored = localStorage.getItem(KEYS.SHEETS_SYNC);
+      return stored ? { ...defaultSettings, ...JSON.parse(stored) } : defaultSettings;
+    } catch (e) {
+      return defaultSettings;
+    }
+  }
+
+  static saveSheetsSyncSettings(settings) {
+    const current = this.getSheetsSyncSettings();
+    const updated = { ...current, ...settings, updatedAt: new Date().toISOString() };
+    this.set(KEYS.SHEETS_SYNC, updated);
+    return updated;
+  }
+
+  /**
+   * 堅牢な CSV パーサー (二重引用符・改行・カンマ区切り対応)
+   */
+  static parseCSV(text) {
+    const lines = [];
+    let row = [];
+    let cell = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      const nextC = text[i + 1];
+
+      if (c === '"') {
+        if (inQuotes && nextC === '"') {
+          cell += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (c === ',' && !inQuotes) {
+        row.push(cell.trim());
+        cell = '';
+      } else if ((c === '\r' || c === '\n') && !inQuotes) {
+        if (c === '\r' && nextC === '\n') {
+          i++;
+        }
+        row.push(cell.trim());
+        if (row.some(field => field.length > 0)) {
+          lines.push(row);
+        }
+        row = [];
+        cell = '';
+      } else {
+        cell += c;
+      }
+    }
+
+    if (cell.length > 0 || row.length > 0) {
+      row.push(cell.trim());
+      if (row.some(field => field.length > 0)) {
+        lines.push(row);
+      }
+    }
+
+    return lines;
+  }
+
+  /**
+   * Google スプレッドシートからのフェッチ＆パース処理
+   */
+  static async fetchGoogleSheetData(spreadsheetId, tabName) {
+    if (!spreadsheetId || !spreadsheetId.trim()) {
+      throw new Error('スプレッドシートIDが指定されていません。');
+    }
+
+    const cleanId = spreadsheetId.trim();
+    const cleanTab = (tabName || '【新：15/1Q】案件一覧').trim();
+
+    // Google Sheets CSV エクスポート URL (認証不要・共有設定用)
+    const exportUrl = `https://docs.google.com/spreadsheets/d/${cleanId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(cleanTab)}`;
+
+    const res = await fetch(exportUrl);
+    if (!res.ok) {
+      throw new Error(`スプレッドシートの取得に失敗しました (HTTP Status ${res.status})。スプレッドシートIDとタブ名、および共有設定（「リンクを知っている全員が閲覧可能」）をご確認ください。`);
+    }
+
+    const csvText = await res.text();
+    const rows = this.parseCSV(csvText);
+
+    if (rows.length < 2) {
+      throw new Error('スプレッドシート内にデータ行が見つかりませんでした。');
+    }
+
+    const headers = rows[0].map(h => h.trim());
+    const dataRows = rows.slice(1);
+
+    // カラム位置のマッピング判定
+    const colMap = {
+      companyName: headers.findIndex(h => /企業|クライアント|会社/.test(h)),
+      companyNameKana: headers.findIndex(h => /よみ|ふりがな|フリガナ/.test(h)),
+      jobTitle: headers.findIndex(h => /案件|求人|ポジション|タイトル|職種名/.test(h)),
+      industry: headers.findIndex(h => /業種|業界|事業/.test(h)),
+      position: headers.findIndex(h => /職種|カテゴリ/.test(h)),
+      status: headers.findIndex(h => /ステータス|状況|フェーズ/.test(h)),
+      targetAge: headers.findIndex(h => /年齢|対象/.test(h)),
+      role: headers.findIndex(h => /役職|ランク/.test(h)),
+      salaryRange: headers.findIndex(h => /年収|給料|条件/.test(h)),
+      priorityRank: headers.findIndex(h => /注力|優先/.test(h)),
+      staffName: headers.findIndex(h => /担当|コンサルタント|営業/.test(h))
+    };
+
+    const parsedJobs = dataRows.map((row, idx) => {
+      const getVal = (colIndex) => (colIndex >= 0 && row[colIndex] ? row[colIndex].trim() : '');
+
+      const companyName = getVal(colMap.companyName);
+      const jobTitle = getVal(colMap.jobTitle) || '案件情報';
+
+      if (!companyName && !jobTitle) return null;
+
+      // 対象年齢のパース
+      const rawAge = getVal(colMap.targetAge);
+      let targetAge = [];
+      if (rawAge) {
+        TARGET_AGES.forEach(ageOption => {
+          if (rawAge.includes(ageOption) || (ageOption === '若手（U35）' && /若手|35未満|U35|20代|30代前半/.test(rawAge))) {
+            targetAge.push(ageOption);
+          }
+        });
+        if (targetAge.length === 0 && rawAge) targetAge = [rawAge];
+      }
+
+      // 年収帯のパース
+      const rawSalary = getVal(colMap.salaryRange);
+      let salaryRange = [];
+      if (rawSalary) {
+        SALARY_RANGES.forEach(salOption => {
+          if (rawSalary.includes(salOption)) {
+            salaryRange.push(salOption);
+          }
+        });
+        if (salaryRange.length === 0 && rawSalary) salaryRange = [rawSalary];
+      }
+
+      // ステータスのパース・標準化
+      let status = getVal(colMap.status) || 'スカウト実施中';
+      if (/準備/.test(status)) status = '準備中';
+      else if (/一時停止|停止|中断/.test(status)) status = '一時停止';
+      else if (/終了|決定|完了/.test(status)) status = '募集終了';
+      else if (/実施|進行|アクティブ|公開/.test(status)) status = 'スカウト実施中';
+
+      // 注力ランクのパース
+      let priorityRank = getVal(colMap.priorityRank);
+      if (!PRIORITY_RANKS[priorityRank]) {
+        if (/SS|最重要|最優先/.test(priorityRank)) priorityRank = 'SS';
+        else if (/S|重要/.test(priorityRank)) priorityRank = 'S';
+        else if (/A/.test(priorityRank)) priorityRank = 'A';
+        else if (/B/.test(priorityRank)) priorityRank = 'B';
+        else priorityRank = 'UNSET';
+      }
+
+      return {
+        rowIndex: idx + 2,
+        companyName: companyName || '不明企業',
+        companyNameKana: getVal(colMap.companyNameKana),
+        jobTitle,
+        industry: getVal(colMap.industry) || 'メーカー',
+        position: getVal(colMap.position) || '営業',
+        status,
+        targetAge,
+        role: getVal(colMap.role),
+        salaryRange,
+        priorityRank,
+        staffName: getVal(colMap.staffName)
+      };
+    }).filter(Boolean);
+
+    return {
+      totalRows: dataRows.length,
+      parsedJobs,
+      headers
+    };
+  }
+
+  /**
+   * Google スプレッドシートからのUPSERT実行処理 (新規追加・更新)
+   */
+  static async syncJobsFromGoogleSheet(spreadsheetId, tabName, operatorStaffId = '') {
+    const { parsedJobs, totalRows } = await this.fetchGoogleSheetData(spreadsheetId, tabName);
+
+    let createdCount = 0;
+    let updatedCount = 0;
+    const users = this.getUsers();
+    const userMapByName = new Map(users.map(u => [u.name.trim(), u.staffId]));
+
+    for (const item of parsedJobs) {
+      const existingJob = this.getJobs().find(j => 
+        j.companyName.trim() === item.companyName.trim() && 
+        j.jobTitle.trim() === item.jobTitle.trim()
+      );
+
+      const savedJob = this.saveJob({
+        jobId: existingJob ? existingJob.jobId : '',
+        companyName: item.companyName,
+        companyNameKana: item.companyNameKana || (existingJob ? existingJob.companyNameKana : ''),
+        jobTitle: item.jobTitle,
+        industry: item.industry || (existingJob ? existingJob.industry : ''),
+        position: item.position || (existingJob ? existingJob.position : ''),
+        status: item.status || (existingJob ? existingJob.status : 'スカウト実施中'),
+        targetAge: item.targetAge.length > 0 ? item.targetAge : (existingJob ? existingJob.targetAge : []),
+        role: item.role || (existingJob ? existingJob.role : ''),
+        salaryRange: item.salaryRange.length > 0 ? item.salaryRange : (existingJob ? existingJob.salaryRange : [])
+      }, operatorStaffId);
+
+      // 注力ランクが指定されていれば企業マスタへ適用
+      if (item.priorityRank && item.priorityRank !== 'UNSET' && savedJob.companyId) {
+        try {
+          this.updateCompanyRank(savedJob.companyId, item.priorityRank, operatorStaffId);
+        } catch (e) {}
+      }
+
+      // 担当者名の紐付け自動アサイン
+      if (item.staffName) {
+        const staffId = userMapByName.get(item.staffName.trim());
+        if (staffId) {
+          this.addUserJob(staffId, savedJob.jobId);
+        }
+      }
+
+      if (existingJob) {
+        updatedCount++;
+      } else {
+        createdCount++;
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    this.saveSheetsSyncSettings({
+      spreadsheetId,
+      tabName,
+      lastSyncAt: nowIso,
+      lastSyncCount: parsedJobs.length
+    });
+
+    this.addChangeLog({
+      targetType: 'google_sheets_sync',
+      targetId: spreadsheetId,
+      actionType: 'sync',
+      staffId: operatorStaffId || 'SYSTEM',
+      notes: `Googleスプレッドシート (${tabName}) から全${parsedJobs.length}件の同期完了 (新規:${createdCount}件 / 更新:${updatedCount}件)`
+    });
+
+    return {
+      totalRows,
+      processedCount: parsedJobs.length,
+      createdCount,
+      updatedCount,
+      lastSyncAt: nowIso
+    };
   }
 
   // --- 現在選択中担当者 ---
@@ -5397,6 +5663,12 @@ class AppController {
               ${this.jobsMasterSearchKeyword || activeFilterCount > 0 ? `
                 <button id="btn-clear-jobs-search" class="btn btn-secondary btn-sm" style="height:36px;">クリア</button>
               ` : ''}
+              <button id="btn-open-google-sheets-sync-modal" class="btn btn-navy btn-sm" style="display:inline-flex; align-items:center; gap:4px; height:36px; background:var(--color-navy-main); border-color:var(--color-gold-accent);" title="スプレッドシート（【15期】総合チーム共有シート）から求人・案件データを自動取り込み">
+                <i data-lucide="file-spreadsheet" style="width:14px;height:14px;color:var(--color-gold-accent);"></i> 【15期】シートから同期
+              </button>
+              <button id="btn-open-create-job-modal" class="btn btn-gold btn-sm" style="display:inline-flex; align-items:center; gap:4px; height:36px;">
+                <i data-lucide="plus-circle" style="width:14px;height:14px;"></i> 新規求人を登録
+              </button>
             </div>
 
             <div style="display:flex; align-items:center; gap:8px;">
@@ -5572,12 +5844,12 @@ class AppController {
     `;
 
     // イベントバインド
-    container.querySelector('#btn-admin-manage-staff')?.addEventListener('click', () => {
-      this.openStaffManagerModal();
+    container.querySelector('#btn-open-google-sheets-sync-modal')?.addEventListener('click', () => {
+      this.openGoogleSheetsSyncModal();
     });
 
-    container.querySelector('#btn-admin-data-manage')?.addEventListener('click', () => {
-      this.switchView('data-management');
+    container.querySelector('#btn-admin-manage-staff')?.addEventListener('click', () => {
+      this.openStaffManagerModal();
     });
 
     container.querySelector('#btn-admin-data-manage')?.addEventListener('click', () => {
@@ -6923,6 +7195,17 @@ class AppController {
     };
 
     container.innerHTML = `
+      <!-- Google スプレッドシート連携・自動同期 -->
+      <div class="card" style="margin-bottom: 20px; border-left: 4px solid var(--color-gold-accent);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div>
+            <h3 class="card-title" style="margin:0;"><i data-lucide="file-spreadsheet" style="color:var(--color-gold-accent);"></i> Googleスプレッドシート自動同期</h3>
+            <p style="font-size:12px; color:var(--text-secondary); margin-top:4px;">「【15期】総合チーム共有シート」の「【新：15/1Q】案件一覧」タブと連携し、ワンクリックで最新データを一括取り込み・UPSERT更新します。</p>
+          </div>
+          <button id="btn-open-sheets-sync-setting-modal" class="btn btn-navy"><i data-lucide="refresh-cw"></i> スプレッドシート同期を開く</button>
+        </div>
+      </div>
+
       <!-- CSV出力 -->
       <div class="card" style="margin-bottom: 20px;">
         <h3 class="card-title"><i data-lucide="download"></i> 1. CSVエクスポート</h3>
@@ -7007,6 +7290,10 @@ class AppController {
         </div>
       </div>
     `;
+
+    container.querySelector('#btn-open-sheets-sync-setting-modal')?.addEventListener('click', () => {
+      this.openGoogleSheetsSyncModal();
+    });
 
     container.querySelectorAll('.btn-export-csv').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -7860,6 +8147,154 @@ class AppController {
     const closeModal = () => mContainer.innerHTML = '';
     mContainer.querySelector('.modal-close').onclick = closeModal;
     mContainer.querySelector('.modal-cancel').onclick = closeModal;
+  }
+
+  openGoogleSheetsSyncModal() {
+    const settings = StorageService.getSheetsSyncSettings();
+    const lastSyncDisplay = settings.lastSyncAt ? new Date(settings.lastSyncAt).toLocaleString('ja-JP') : '未同期';
+
+    const html = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 680px;">
+          <div class="modal-header">
+            <h3 class="modal-title"><i data-lucide="file-spreadsheet" style="color:var(--color-gold-accent);"></i> Googleスプレッドシートデータ自動同期</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body" style="font-size:13px; line-height:1.6;">
+            <div style="background:var(--color-bg-secondary); padding:12px 16px; border-radius:6px; border:1px solid var(--border-light); margin-bottom:16px;">
+              <p style="margin:0; font-weight:700; color:var(--color-navy-main);">■ 対象シート: 「【15期】総合チーム共有シート」</p>
+              <p style="margin:4px 0 0 0; font-size:12px; color:var(--text-secondary);">共有スプレッドシートの指定タブから求人・案件データを自動で吸い上げ、既存データへの「更新」および「新規追加」をUPSERT処理します。</p>
+              <p style="margin:4px 0 0 0; font-size:11px; color:var(--color-gold-hover);">※スプレッドシートの共有設定が「リンクを知っている全員が閲覧可能」になっていることを確認してください。</p>
+            </div>
+
+            <div class="form-group" style="margin-bottom:12px;">
+              <label class="form-label">スプレッドシートID または URL <span style="color:var(--color-danger);">*</span></label>
+              <input type="text" id="sync-spreadsheet-id" class="form-control" value="${this.escapeHtml(settings.spreadsheetId)}" placeholder="例: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms または 共有URL">
+              <span style="font-size:11px; color:var(--text-muted);">スプレッドシートURL https://docs.google.com/spreadsheets/d/<b>[スプレッドシートID]</b>/edit から自動抽出されます。</span>
+            </div>
+
+            <div class="form-group" style="margin-bottom:16px;">
+              <label class="form-label">対象シート（タブ名） <span style="color:var(--color-danger);">*</span></label>
+              <input type="text" id="sync-tab-name" class="form-control" value="${this.escapeHtml(settings.tabName || '【新：15/1Q】案件一覧')}" placeholder="例: 【新：15/1Q】案件一覧">
+            </div>
+
+            <div style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">
+              最終同期日時: <strong>${lastSyncDisplay}</strong> (前回同期件数: ${settings.lastSyncCount} 件)
+            </div>
+
+            <div id="sync-preview-container" style="display:none; margin-top:16px; max-height:220px; overflow-y:auto; border:1px solid var(--border-light); border-radius:4px; padding:10px; background:#FAFAFA; font-size:12px;">
+            </div>
+          </div>
+          <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+            <button id="btn-sync-preview" class="btn btn-secondary"><i data-lucide="eye"></i> プレビュー確認</button>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-secondary modal-cancel">キャンセル</button>
+              <button id="btn-sync-execute" class="btn btn-gold"><i data-lucide="refresh-cw"></i> スプレッドシートから同期（DB反映）</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mContainer = document.getElementById('modal-container');
+    mContainer.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+
+    const closeModal = () => mContainer.innerHTML = '';
+    mContainer.querySelector('.modal-close').onclick = closeModal;
+    mContainer.querySelector('.modal-cancel').onclick = closeModal;
+
+    const extractSheetId = (inputVal) => {
+      if (!inputVal) return '';
+      const match = inputVal.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      return match ? match[1] : inputVal.trim();
+    };
+
+    // プレビュー確認ボタン
+    mContainer.querySelector('#btn-sync-preview').onclick = async () => {
+      const rawId = mContainer.querySelector('#sync-spreadsheet-id').value;
+      const sheetId = extractSheetId(rawId);
+      const tabName = mContainer.querySelector('#sync-tab-name').value.trim();
+
+      if (!sheetId) {
+        alert('スプレッドシートIDまたはURLを入力してください。');
+        return;
+      }
+
+      const prevContainer = mContainer.querySelector('#sync-preview-container');
+      prevContainer.style.display = 'block';
+      prevContainer.innerHTML = '<p style="color:var(--text-muted); text-align:center;">スプレッドシートからプレビューデータを読み込み中…</p>';
+
+      try {
+        const { parsedJobs, totalRows } = await StorageService.fetchGoogleSheetData(sheetId, tabName);
+        
+        prevContainer.innerHTML = `
+          <div style="font-weight:700; margin-bottom:8px; color:var(--color-navy-main);">
+            解析成功: 全 ${totalRows} 行中、有効な求人・案件 ${parsedJobs.length} 件を検出しました
+          </div>
+          <table class="data-table" style="font-size:11px;">
+            <thead>
+              <tr>
+                <th>企業名</th>
+                <th>求人名 / 案件名</th>
+                <th>ステータス</th>
+                <th>担当者</th>
+                <th>年収・条件</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${parsedJobs.slice(0, 5).map(j => `
+                <tr>
+                  <td>${this.escapeHtml(j.companyName)}</td>
+                  <td>${this.escapeHtml(j.jobTitle)}</td>
+                  <td>${this.escapeHtml(j.status)}</td>
+                  <td>${this.escapeHtml(j.staffName || '-')}</td>
+                  <td>${this.escapeHtml((j.salaryRange || []).join('、') || '-')}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          ${parsedJobs.length > 5 ? `<div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-align:right;">※上位5件を表示中 (他 ${parsedJobs.length - 5} 件)</div>` : ''}
+        `;
+      } catch (err) {
+        prevContainer.innerHTML = `<div style="color:var(--color-danger); font-weight:700;">取得エラー: ${this.escapeHtml(err.message)}</div>`;
+      }
+    };
+
+    // 同期実行ボタン
+    mContainer.querySelector('#btn-sync-execute').onclick = async () => {
+      const rawId = mContainer.querySelector('#sync-spreadsheet-id').value;
+      const sheetId = extractSheetId(rawId);
+      const tabName = mContainer.querySelector('#sync-tab-name').value.trim();
+
+      if (!sheetId) {
+        alert('スプレッドシートIDまたはURLを入力してください。');
+        return;
+      }
+
+      const execBtn = mContainer.querySelector('#btn-sync-execute');
+      execBtn.disabled = true;
+      execBtn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> 同期・DB反映中…';
+      if (window.lucide) window.lucide.createIcons();
+
+      try {
+        const result = await StorageService.syncJobsFromGoogleSheet(sheetId, tabName, this.currentStaff ? this.currentStaff.staffId : '');
+
+        closeModal();
+        this.showToast(`スプレッドシートから ${result.processedCount} 件を同期しました！(新規追加: ${result.createdCount}件 / 更新: ${result.updatedCount}件)`, 'success');
+
+        if (this.currentView === 'jobs' || this.currentView === 'data-management') {
+          this.renderCurrentView();
+        } else {
+          this.switchView('jobs');
+        }
+      } catch (err) {
+        alert(`同期エラー: ${err.message}`);
+        execBtn.disabled = false;
+        execBtn.innerHTML = '<i data-lucide="refresh-cw"></i> スプレッドシートから同期（DB反映）';
+        if (window.lucide) window.lucide.createIcons();
+      }
+    };
   }
 
   escapeHtml(str) {
