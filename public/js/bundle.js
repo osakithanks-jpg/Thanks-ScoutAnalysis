@@ -403,6 +403,35 @@ class StorageService {
     }
   }
 
+  // --- 変更履歴 (Change Logs) ---
+  static getChangeLogs() {
+    return StorageService.get(KEYS.CHANGE_LOGS);
+  }
+
+  static addChangeLog(logData) {
+    try {
+      const logs = StorageService.getChangeLogs();
+      const now = new Date().toISOString();
+      const newLog = {
+        logId: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        actionType: logData.actionType || 'update',
+        targetType: logData.targetType || 'unknown',
+        targetId: logData.targetId || '',
+        beforeData: logData.beforeData !== undefined ? logData.beforeData : null,
+        afterData: logData.afterData !== undefined ? logData.afterData : null,
+        staffId: logData.staffId || logData.operatorId || 'SYSTEM',
+        notes: logData.notes || '',
+        createdAt: now
+      };
+      logs.push(newLog);
+      StorageService.set(KEYS.CHANGE_LOGS, logs);
+      return newLog;
+    } catch (err) {
+      console.warn('変更履歴の保存処理中に警告（業務データ保存は完了しています）:', err);
+      return null;
+    }
+  }
+
   // --- 汎用ヘルパー ---
   static get(key) {
     try {
@@ -832,15 +861,17 @@ class StorageService {
 
     this.set(KEYS.USERS, users);
 
-    this.addChangeLog({
-      targetType: 'staff',
-      targetId: savedUser.staffId,
-      actionType: idx >= 0 ? 'update' : 'create',
-      beforeData,
-      afterData: savedUser,
-      staffId: operatorStaffId,
-      notes: `担当者「${savedUser.name}」の${idx >= 0 ? '情報編集' : '新規登録'}`
-    });
+    try {
+      StorageService.addChangeLog({
+        targetType: 'staff',
+        targetId: savedUser.staffId,
+        actionType: idx >= 0 ? 'update' : 'create',
+        beforeData,
+        afterData: savedUser,
+        staffId: operatorStaffId,
+        notes: `担当者「${savedUser.name}」の${idx >= 0 ? '情報編集' : '新規登録'}`
+      });
+    } catch (e) {}
 
     return savedUser;
   }
@@ -854,15 +885,17 @@ class StorageService {
       users[idx].updatedAt = new Date().toISOString();
       this.set(KEYS.USERS, users);
 
-      this.addChangeLog({
-        targetType: 'staff',
-        targetId: staffId,
-        actionType: 'update',
-        beforeData,
-        afterData: users[idx],
-        staffId: operatorStaffId,
-        notes: `担当者「${users[idx].name}」の利用状態を「${newStatus === 'active' ? '利用中' : '利用停止'}」に変更`
-      });
+      try {
+        StorageService.addChangeLog({
+          targetType: 'staff',
+          targetId: staffId,
+          actionType: 'update',
+          beforeData,
+          afterData: users[idx],
+          staffId: operatorStaffId,
+          notes: `担当者「${users[idx].name}」の利用状態を「${newStatus === 'active' ? '利用中' : '利用停止'}」に変更`
+        });
+      } catch (e) {}
 
       return users[idx];
     }
@@ -929,15 +962,17 @@ class StorageService {
 
     this.set(KEYS.COMPANIES, companies);
 
-    this.addChangeLog({
-      targetType: 'companies',
-      targetId: savedComp.companyId,
-      actionType: isEdit ? 'update' : 'create',
-      beforeData,
-      afterData: savedComp,
-      staffId: operatorStaffId,
-      notes: `企業「${savedComp.companyName}」の${isEdit ? '情報編集' : '新規登録'}`
-    });
+    try {
+      StorageService.addChangeLog({
+        targetType: 'companies',
+        targetId: savedComp.companyId,
+        actionType: isEdit ? 'update' : 'create',
+        beforeData,
+        afterData: savedComp,
+        staffId: operatorStaffId,
+        notes: `企業「${savedComp.companyName}」の${isEdit ? '情報編集' : '新規登録'}`
+      });
+    } catch (e) {}
 
     return savedComp;
   }
@@ -965,15 +1000,17 @@ class StorageService {
     const beforeRankLabel = PRIORITY_RANKS[beforeData.priorityRank]?.fullLabel || beforeData.priorityRank;
     const afterRankLabel = PRIORITY_RANKS[validRank]?.fullLabel || validRank;
 
-    this.addChangeLog({
-      targetType: 'company_rank',
-      targetId: companyId,
-      actionType: 'update_rank',
-      beforeData,
-      afterData: companies[idx],
-      staffId: operatorStaffId,
-      notes: `企業「${companies[idx].companyName}」の注力ランクを「${beforeRankLabel}」から「${afterRankLabel}」へ変更`
-    });
+    try {
+      StorageService.addChangeLog({
+        targetType: 'company_rank',
+        targetId: companyId,
+        actionType: 'update_rank',
+        beforeData,
+        afterData: companies[idx],
+        staffId: operatorStaffId,
+        notes: `企業「${companies[idx].companyName}」の注力ランクを「${beforeRankLabel}」から「${afterRankLabel}」へ変更`
+      });
+    } catch (e) {}
 
     return companies[idx];
   }
@@ -1110,15 +1147,20 @@ class StorageService {
 
     this.set(KEYS.JOBS, jobs);
 
-    this.addChangeLog({
-      targetType: 'jobs',
-      targetId: savedJob.jobId,
-      actionType: isEdit ? 'update' : 'create',
-      beforeData,
-      afterData: savedJob,
-      staffId: operatorStaffId,
-      notes: `求人「${savedJob.companyName} / ${savedJob.jobTitle}」の${isEdit ? '情報編集' : '新規登録'}`
-    });
+    try {
+      StorageService.addChangeLog({
+        targetType: 'jobs',
+        targetId: savedJob.jobId,
+        actionType: isEdit ? 'update' : 'create',
+        beforeData,
+        afterData: savedJob,
+        staffId: operatorStaffId,
+        notes: `求人「${savedJob.companyName} / ${savedJob.jobTitle}」の${isEdit ? '情報編集' : '新規登録'}`
+      });
+      savedJob._logSuccess = true;
+    } catch (e) {
+      savedJob._logSuccess = false;
+    }
 
     return savedJob;
   }
