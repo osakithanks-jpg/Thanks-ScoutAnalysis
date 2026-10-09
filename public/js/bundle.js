@@ -506,29 +506,59 @@ class StorageService {
   }
 
   /**
-   * Google スプレッドシートからのフェッチ＆パース処理
+   * Google スプレッドシートからのフェッチ＆パース処理 (共有権限エラー検知・複数形式対応)
    */
-  static async fetchGoogleSheetData(spreadsheetId, tabName) {
-    if (!spreadsheetId || !spreadsheetId.trim()) {
-      throw new Error('スプレッドシートIDが指定されていません。');
+  static async fetchGoogleSheetData(spreadsheetIdOrUrl, tabName) {
+    if (!spreadsheetIdOrUrl || !spreadsheetIdOrUrl.trim()) {
+      throw new Error('スプレッドシートIDまたはURLが指定されていません。');
     }
 
-    const cleanId = spreadsheetId.trim();
+    let cleanId = spreadsheetIdOrUrl.trim();
+    let gid = '';
+
+    // URLからのIDおよびgid抽出
+    const urlMatch = cleanId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (urlMatch) {
+      cleanId = urlMatch[1];
+    }
+    const gidMatch = spreadsheetIdOrUrl.match(/[?&]gid=([0-9]+)/);
+    if (gidMatch) {
+      gid = gidMatch[1];
+    }
+
     const cleanTab = (tabName || '【新：15/1Q】案件一覧').trim();
 
-    // Google Sheets CSV エクスポート URL (認証不要・共有設定用)
-    const exportUrl = `https://docs.google.com/spreadsheets/d/${cleanId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(cleanTab)}`;
-
-    const res = await fetch(exportUrl);
-    if (!res.ok) {
-      throw new Error(`スプレッドシートの取得に失敗しました (HTTP Status ${res.status})。スプレッドシートIDとタブ名、および共有設定（「リンクを知っている全員が閲覧可能」）をご確認ください。`);
+    // エクスポートURLの構築 (gviz/tq エンドポイント 優先、フォールバックとして export?format=csv)
+    let exportUrl = `https://docs.google.com/spreadsheets/d/${cleanId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(cleanTab)}`;
+    if (gid) {
+      exportUrl += `&gid=${gid}`;
     }
 
-    const csvText = await res.text();
-    const rows = this.parseCSV(csvText);
+    let res;
+    try {
+      res = await fetch(exportUrl);
+    } catch (netErr) {
+      throw new Error(`ネットワークエラーが発生しました。Googleスプレッドシートへの通信に失敗しました: ${netErr.message}`);
+    }
+
+    if (!res.ok) {
+      if (res.status === 404) {
+        throw new Error(`スプレッドシートが見つかりません (404)。スプレッドシートID「${cleanId}」が正しいかご確認ください。`);
+      }
+      throw new Error(`スプレッドシートの取得に失敗しました (HTTP Status ${res.status})。スプレッドシートの共有設定が「リンクを知っている全員が閲覧可能」になっているかご確認ください。`);
+    }
+
+    const rawText = await res.text();
+
+    // 認証リダイレクト（HTMLログイン画面）の検知
+    if (rawText.includes('<html') || rawText.includes('<!DOCTYPE') || rawText.includes('accounts.google.com') || rawText.includes('Sign in')) {
+      throw new Error('Googleスプレッドシートのアクセス権限エラーです。スプレッドシート右上の「共有」ボタンをクリックし、一般的なアクセスを「リンクを知っている全員」に設定してください。');
+    }
+
+    const rows = StorageService.parseCSV(rawText);
 
     if (rows.length < 2) {
-      throw new Error('スプレッドシート内にデータ行が見つかりませんでした。');
+      throw new Error('スプレッドシート内に有効なデータ行が見つかりませんでした。対象シート（タブ名）をご確認ください。');
     }
 
     const headers = rows[0].map(h => h.trim());
@@ -625,20 +655,20 @@ class StorageService {
    * Google スプレッドシートからのUPSERT実行処理 (新規追加・更新)
    */
   static async syncJobsFromGoogleSheet(spreadsheetId, tabName, operatorStaffId = '') {
-    const { parsedJobs, totalRows } = await this.fetchGoogleSheetData(spreadsheetId, tabName);
+    const { parsedJobs, totalRows } = await StorageService.fetchGoogleSheetData(spreadsheetId, tabName);
 
     let createdCount = 0;
     let updatedCount = 0;
-    const users = this.getUsers();
+    const users = StorageService.getUsers();
     const userMapByName = new Map(users.map(u => [u.name.trim(), u.staffId]));
 
     for (const item of parsedJobs) {
-      const existingJob = this.getJobs().find(j => 
+      const existingJob = StorageService.getJobs().find(j => 
         j.companyName.trim() === item.companyName.trim() && 
         j.jobTitle.trim() === item.jobTitle.trim()
       );
 
-      const savedJob = this.saveJob({
+      const savedJob = StorageService.saveJob({
         jobId: existingJob ? existingJob.jobId : '',
         companyName: item.companyName,
         companyNameKana: item.companyNameKana || (existingJob ? existingJob.companyNameKana : ''),
@@ -654,7 +684,7 @@ class StorageService {
       // 注力ランクが指定されていれば企業マスタへ適用
       if (item.priorityRank && item.priorityRank !== 'UNSET' && savedJob.companyId) {
         try {
-          this.updateCompanyRank(savedJob.companyId, item.priorityRank, operatorStaffId);
+          StorageService.updateCompanyRank(savedJob.companyId, item.priorityRank, operatorStaffId);
         } catch (e) {}
       }
 
@@ -662,7 +692,7 @@ class StorageService {
       if (item.staffName) {
         const staffId = userMapByName.get(item.staffName.trim());
         if (staffId) {
-          this.addUserJob(staffId, savedJob.jobId);
+          StorageService.addUserJob(staffId, savedJob.jobId);
         }
       }
 
@@ -674,20 +704,24 @@ class StorageService {
     }
 
     const nowIso = new Date().toISOString();
-    this.saveSheetsSyncSettings({
+    StorageService.saveSheetsSyncSettings({
       spreadsheetId,
       tabName,
       lastSyncAt: nowIso,
       lastSyncCount: parsedJobs.length
     });
 
-    this.addChangeLog({
-      targetType: 'google_sheets_sync',
-      targetId: spreadsheetId,
-      actionType: 'sync',
-      staffId: operatorStaffId || 'SYSTEM',
-      notes: `Googleスプレッドシート (${tabName}) から全${parsedJobs.length}件の同期完了 (新規:${createdCount}件 / 更新:${updatedCount}件)`
-    });
+    try {
+      StorageService.addChangeLog({
+        targetType: 'google_sheets_sync',
+        targetId: spreadsheetId,
+        actionType: 'sync',
+        staffId: operatorStaffId || 'SYSTEM',
+        notes: `Googleスプレッドシート (${tabName}) から全${parsedJobs.length}件の同期完了 (新規:${createdCount}件 / 更新:${updatedCount}件)`
+      });
+    } catch (logErr) {
+      console.warn('変更履歴の登録失敗（同期データ保存には影響ありません）:', logErr);
+    }
 
     return {
       totalRows,
