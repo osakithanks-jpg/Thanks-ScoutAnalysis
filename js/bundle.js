@@ -143,6 +143,102 @@ const DEFAULT_INBOUND_ROUTES = [
   { id: 'other', name: 'その他', order: 7, color: '#718096' }
 ];
 
+// 新規求人初動ステータス定義 (9種)
+const INITIAL_ACTION_STATUSES = [
+  '初動未設計',
+  'スカウト準備中',
+  'スカウト実施中',
+  '2営業日後レビュー待ち',
+  '報告作成待ち',
+  '報告済み',
+  '追加アクション実施中',
+  '初回MTG待ち',
+  '初動完了'
+];
+
+const INITIAL_ACTION_STATUS_BADGES = {
+  '初動未設計': { label: '初動未設計', className: 'badge-status-init', order: 1 },
+  'スカウト準備中': { label: 'スカウト準備中', className: 'badge-status-prep', order: 2 },
+  'スカウト実施中': { label: 'スカウト実施中', className: 'badge-status-running', order: 3 },
+  '2営業日後レビュー待ち': { label: '2営業日後レビュー待ち', className: 'badge-status-review', order: 4 },
+  '報告作成待ち': { label: '報告作成待ち', className: 'badge-status-report-wait', order: 5 },
+  '報告済み': { label: '報告済み', className: 'badge-status-reported', order: 6 },
+  '追加アクション実施中': { label: '追加アクション実施中', className: 'badge-status-extra', order: 7 },
+  '初回MTG待ち': { label: '初回MTG待ち', className: 'badge-status-mtg-wait', order: 8 },
+  '初動完了': { label: '初動完了', className: 'badge-status-done', order: 9 }
+};
+
+// チェックリスト項目
+const INITIAL_CHECKLIST_DEFINITIONS = {
+  stage1: {
+    title: '当日～初動開始',
+    items: [
+      { id: 'c1_1', text: '営業とコンサルで求人内容を確認した' },
+      { id: 'c1_2', text: 'ターゲット・ペルソナを設定した' },
+      { id: 'c1_3', text: '案件難易度と決定イメージを整理した' },
+      { id: 'c1_4', text: 'スカウト文面を作成した' },
+      { id: 'c1_5', text: '2媒体以上を選定した' },
+      { id: 'c1_6', text: '媒体ごとの検索条件を設定した' },
+      { id: 'c1_7', text: 'スカウトを開始した' }
+    ]
+  },
+  stage2: {
+    title: '2営業日後まで',
+    items: [
+      { id: 'c2_1', text: '選定媒体への初回スカウトを完了した' },
+      { id: 'c2_2', text: 'スカウト実績を確認した' },
+      { id: 'c2_3', text: '想定送信数と実績を比較した' },
+      { id: 'c2_4', text: '返信状況を確認した' },
+      { id: 'c2_5', text: 'ターゲット、文面、媒体、検索条件を検証した' },
+      { id: 'c2_6', text: '次のアクションを決定した' },
+      { id: 'c2_7', text: '営業への報告を作成した' }
+    ]
+  },
+  stage3: {
+    title: '初回MTGまで',
+    items: [
+      { id: 'c3_1', text: '返信不足の場合、対象者がいる媒体を追加した' },
+      { id: 'c3_2', text: '必要に応じて対象者を拡大・変更した' },
+      { id: 'c3_3', text: '初回MTGで確認する内容を整理した' },
+      { id: 'c3_4', text: '次週のアクションを設定した' }
+    ]
+  }
+};
+
+// 次のアクション選択肢 (17種)
+const NEXT_ACTION_TYPES = [
+  '現在の対象で継続する',
+  '対象者を広げる',
+  '対象者を変更する',
+  '年齢条件を見直す',
+  '経験条件を見直す',
+  '年収条件を見直す',
+  '勤務地条件を見直す',
+  'スカウト文面を変更する',
+  '件名を変更する',
+  '訴求ポイントを変更する',
+  '検索条件を変更する',
+  '媒体を追加する',
+  '全媒体で実施する',
+  '営業へ追加確認する',
+  '企業へ求人条件を確認する',
+  '初回MTGで確認する',
+  'その他'
+];
+
+// 2営業日後レビュー 検証項目 (7種)
+const REVIEW_VERIFICATION_ITEMS = [
+  { id: 'targetAlignment', label: 'ターゲット設定にズレはないか' },
+  { id: 'messageAppropriateness', label: 'ターゲットに対して文面は適切か' },
+  { id: 'mediaSelection', label: '案件と媒体の選定にズレはないか' },
+  { id: 'searchConditions', label: 'ターゲットを媒体検索条件へ落とし込めているか' },
+  { id: 'candidateTargeting', label: '送付対象者にズレはないか' },
+  { id: 'jobConditionsConcern', label: '条件面または求人内容に懸念はないか' },
+  { id: 'scoutVolume', label: 'スカウト実施量は十分か' }
+];
+
+const VERIFICATION_OPTIONS = ['問題なし', '要確認', '要変更', '判断できない'];
+
 const KEYS = {
   USERS: 'tp_scout_users_v2',
   COMPANIES: 'tp_scout_companies_v2',
@@ -162,7 +258,8 @@ const KEYS = {
   CHANGE_LOGS: 'tp_scout_change_logs_v2',
   SETTINGS: 'tp_scout_settings_v2',
   CURRENT_STAFF_ID: 'tp_scout_current_staff_id_v2',
-  SHEETS_SYNC: 'tp_scout_sheets_sync_v2'
+  SHEETS_SYNC: 'tp_scout_sheets_sync_v2',
+  INITIAL_ACTIONS: 'tp_scout_initial_actions_v2'
 };
 
 
@@ -202,6 +299,7 @@ class StorageService {
     if (!localStorage.getItem(KEYS.SETTINGS)) {
       localStorage.setItem(KEYS.SETTINGS, JSON.stringify({ lastUpdated: new Date().toISOString() }));
     }
+    if (!localStorage.getItem(KEYS.INITIAL_ACTIONS)) localStorage.setItem(KEYS.INITIAL_ACTIONS, JSON.stringify([]));
 
     this.migrateCompaniesFromJobs();
   }
@@ -2115,6 +2213,209 @@ class StorageService {
     return { message: currentMsg, version: newVersion };
   }
 
+  // =========================================================================
+  // 新規求人初動管理 (Initial Actions)
+  // =========================================================================
+  static getInitialActions() {
+    const list = this.get(KEYS.INITIAL_ACTIONS);
+    return Array.isArray(list) ? list : [];
+  }
+
+  static getInitialActionByJobId(jobId) {
+    return this.getInitialActions().find(a => a.jobId === jobId) || null;
+  }
+
+  static getInitialActionById(initialActionId) {
+    return this.getInitialActions().find(a => a.initialActionId === initialActionId) || null;
+  }
+
+  static calculateBusinessDaysLater(startDateStr, businessDays = 2) {
+    if (!startDateStr) return '';
+    const d = new Date(startDateStr + (startDateStr.length === 10 ? 'T00:00:00+09:00' : ''));
+    let added = 0;
+    while (added < businessDays) {
+      d.setDate(d.getDate() + 1);
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) { // 土日を除外
+        added++;
+      }
+    }
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dayStr = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dayStr}`;
+  }
+
+  static calculateInitialActionStatus(action, metrics = null, review = null, reports = [], checklist = {}) {
+    if (action.statusManualOverride && action.status) {
+      return action.status;
+    }
+
+    // 1. 初動完了
+    if (action.status === '初動完了' || (action.firstMeetingReview && action.firstMeetingReview.updatedAt && (reports || []).length > 0)) {
+      return '初動完了';
+    }
+
+    // 2. 初回MTG待ち
+    if (action.firstMeetingDate && (reports || []).length > 0) {
+      return '初回MTG待ち';
+    }
+
+    // 3. 追加アクション実施中
+    const nextActions = action.nextActions || [];
+    if (nextActions.some(a => !a.completed) && (reports || []).length > 0) {
+      return '追加アクション実施中';
+    }
+
+    // 4. 報告済み
+    if (action.reportStatus === '報告済み' || (reports && reports.length > 0)) {
+      return '報告済み';
+    }
+
+    // 5. 報告作成待ち (レビュー完了済み)
+    if (review && review.reviewedAt) {
+      return '報告作成待ち';
+    }
+
+    // 6. 2営業日後レビュー待ち (期限到達またはスカウト実施中)
+    const today = new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }).replace(/\//g, '-');
+    if (action.deadlineDate && today >= action.deadlineDate && (metrics && metrics.sentCount > 0)) {
+      return '2営業日後レビュー待ち';
+    }
+
+    // 7. スカウト実施中 (送信実績あり)
+    if (metrics && metrics.sentCount > 0) {
+      return 'スカウト実施中';
+    }
+
+    // 8. スカウト準備中 (初動設計入力あり)
+    const design = action.design || {};
+    if (design.targetPersona || (design.mediaPlans && design.mediaPlans.length > 0) || Number(design.initialSentGoal) > 0) {
+      return 'スカウト準備中';
+    }
+
+    return '初動未設計';
+  }
+
+  static saveInitialAction(action, operatorStaffId = '') {
+    const list = this.getInitialActions();
+    const now = new Date().toISOString();
+    const jobId = action.jobId;
+    let idx = list.findIndex(a => a.jobId === jobId || (action.initialActionId && a.initialActionId === action.initialActionId));
+
+    let saved;
+    if (idx >= 0) {
+      saved = {
+        ...list[idx],
+        ...action,
+        updatedAt: now,
+        updatedByStaffId: operatorStaffId
+      };
+      list[idx] = saved;
+    } else {
+      const initialActionId = action.initialActionId || `ACT_${jobId}`;
+      saved = {
+        initialActionId,
+        jobId,
+        acquisitionDate: action.acquisitionDate || now.slice(0, 10),
+        firstMeetingDate: action.firstMeetingDate || '',
+        deadlineDate: action.deadlineDate || this.calculateBusinessDaysLater(action.acquisitionDate || now.slice(0, 10), 2),
+        consultantStaffId: action.consultantStaffId || '',
+        salesStaffId: action.salesStaffId || '',
+        jobDifficulty: action.jobDifficulty || '通常',
+        hiringCount: Number(action.hiringCount) || 1,
+        notes: action.notes || '',
+        status: action.status || '初動未設計',
+        statusManualOverride: Boolean(action.statusManualOverride),
+        design: action.design || {
+          targetPersona: '',
+          requiredExperience: '',
+          preferredExperience: '',
+          acceptableExperience: '',
+          targetAgeRange: '',
+          targetSalaryRange: '',
+          workLocation: '',
+          jobChangeCount: '',
+          jobChangeReason: '',
+          decisionPersona: '',
+          concerns: '',
+          difficultyView: '',
+          processImage: '',
+          targetReplyCount: 2,
+          expectedTotalReplyRate: 2.0,
+          expectedEffectiveReplyRate: 1.0,
+          expectedSentCount: 100,
+          initialSentGoal: 100,
+          mediaPlans: [],
+          scoutMessageId: '',
+          scoutSubject: '',
+          scoutAppealPoints: '',
+          scoutMessageStatus: '未作成'
+        },
+        checklist: action.checklist || {},
+        review: action.review || {
+          reviewedAt: '',
+          reviewedByStaffId: '',
+          executionStatus: {
+            isExecutedAsPlanned: '',
+            unexecutedReason: '',
+            asExpectedNotes: '',
+            unexpectedNotes: ''
+          },
+          verificationItems: {
+            targetAlignment: '問題なし',
+            targetAlignmentComment: '',
+            messageAppropriateness: '問題なし',
+            messageAppropriatenessComment: '',
+            mediaSelection: '問題なし',
+            mediaSelectionComment: '',
+            searchConditions: '問題なし',
+            searchConditionsComment: '',
+            candidateTargeting: '問題なし',
+            candidateTargetingComment: '',
+            jobConditionsConcern: '問題なし',
+            jobConditionsConcernComment: '',
+            scoutVolume: '問題なし',
+            scoutVolumeComment: ''
+          }
+        },
+        representativeCandidates: action.representativeCandidates || [],
+        nextActions: action.nextActions || [],
+        reports: action.reports || [],
+        reportStatus: action.reportStatus || '未報告',
+        lastReportedAt: action.lastReportedAt || '',
+        firstMeetingReview: action.firstMeetingReview || {
+          updatedAt: '',
+          updatedByStaffId: '',
+          concerns: '',
+          meetingCheckpoints: '',
+          nextWeekActionPlans: ''
+        },
+        createdAt: now,
+        updatedAt: now,
+        createdByStaffId: operatorStaffId,
+        updatedByStaffId: operatorStaffId
+      };
+      list.push(saved);
+    }
+
+    this.set(KEYS.INITIAL_ACTIONS, list);
+
+    // 担当コンサルが設定されている場合、自動的に USER_JOBS (担当求人) にもアサイン連動
+    if (saved.consultantStaffId && saved.jobId) {
+      try {
+        this.addUserJob(saved.consultantStaffId, saved.jobId);
+      } catch (e) {}
+    }
+
+    return saved;
+  }
+
+  static deleteInitialAction(initialActionId, operatorStaffId = '') {
+    const list = this.getInitialActions().filter(a => a.initialActionId !== initialActionId);
+    this.set(KEYS.INITIAL_ACTIONS, list);
+  }
+
   static exportCSV(type, currentStaffId = '') {
     const nowJST = new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }).replace(/\//g, '-');
     const jobs = new Map(this.getJobs().map(j => [j.jobId, j]));
@@ -2500,6 +2801,7 @@ class StorageService {
           messageAssignments: messageAssignments.length,
           notifications: notifications.length,
           changeLogs: changeLogs.length,
+          initialActions: (this.get(KEYS.INITIAL_ACTIONS) || []).length,
           systemSettings: Array.isArray(systemSettings) ? systemSettings.length : 1
         }
       },
@@ -2519,6 +2821,7 @@ class StorageService {
       messageAssignments,
       notifications,
       changeLogs,
+      initialActions: this.get(KEYS.INITIAL_ACTIONS) || [],
       systemSettings
     };
 
@@ -2582,6 +2885,7 @@ class StorageService {
     if (d.messageAssignments) this.set(KEYS.MESSAGE_ASSIGNMENTS, d.messageAssignments);
     if (d.notifications) this.set(KEYS.NOTIFICATIONS, d.notifications);
     if (d.changeLogs) this.set(KEYS.CHANGE_LOGS, d.changeLogs);
+    if (d.initialActions) this.set(KEYS.INITIAL_ACTIONS, d.initialActions);
     if (d.systemSettings) this.set(KEYS.SETTINGS, d.systemSettings);
 
     this.addChangeLog({
@@ -3365,6 +3669,17 @@ class AppController {
     this.compareStaffId = '';
     this.comparePeriodKey = 'month';
 
+    // 新規求人初動管理 状態
+    this.currentInitialActionJobId = null;
+    this.initialActionActiveTab = 'design';
+    this.initialActionSearchKeyword = '';
+    this.initialActionFilterConsultant = '';
+    this.initialActionFilterSales = '';
+    this.initialActionFilterRank = '';
+    this.initialActionFilterStatus = '';
+    this.initialActionFilterReport = '';
+    this.initialActionFilterOverdue = false;
+
     // 求人マスタ検索・絞り込み・ソート状態
     this.jobsMasterSearchKeyword = '';
     this.jobsMasterSortBy = 'company_asc';
@@ -3511,6 +3826,7 @@ class AppController {
     const titleMap = {
       'daily-entry': '本日の実績入力',
       'dashboard': 'ダッシュボード',
+      'initial-action': '新規求人初動管理',
       'jobs': '求人マスタ',
       'analysis': '分析',
       'knowledge': '求人振り返り・ナレッジ',
@@ -3533,6 +3849,8 @@ class AppController {
       this.renderDailyEntryView(container);
     } else if (this.currentView === 'dashboard') {
       this.renderDashboardView(container);
+    } else if (this.currentView === 'initial-action') {
+      this.renderInitialActionView(container);
     } else if (this.currentView === 'jobs') {
       this.renderJobsView(container);
     } else if (this.currentView === 'analysis') {
@@ -5821,6 +6139,2132 @@ class AppController {
   }
 
   // =========================================================================
+
+
+  // =========================================================================
+  // 新規求人初動管理 (Initial Action - 初動設計・2営業日レビュー・営業報告メール)
+  // =========================================================================
+  calculateInitialActionMetrics(action) {
+    const jobId = action.jobId;
+    const startDate = action.acquisitionDate || '2020-01-01';
+    const allResults = StorageService.getValidScoutResults();
+    const results = allResults.filter(r => r.jobId === jobId && r.date >= startDate);
+
+    const metrics = AnalyticsService.calculateMetrics(results);
+    const mediaBreakdown = AnalyticsService.aggregateByMedia(results);
+    const usedMediaList = mediaBreakdown.filter(m => m.sentCount > 0);
+
+    let firstSentDate = null;
+    let lastSentDate = null;
+    results.forEach(r => {
+      if (!firstSentDate || r.date < firstSentDate) firstSentDate = r.date;
+      if (!lastSentDate || r.date > lastSentDate) lastSentDate = r.date;
+    });
+
+    return {
+      ...metrics,
+      results,
+      usedMediaList,
+      usedMediaCount: usedMediaList.length,
+      firstSentDate,
+      lastSentDate
+    };
+  }
+
+  getInitialActionWarnings(action, metrics) {
+    const warnings = [];
+    const today = new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }).replace(/\//g, '-');
+    const isCompleted = action.status === '初動完了' || action.status === '報告済み';
+
+    if (action.deadlineDate && today > action.deadlineDate && !isCompleted) {
+      warnings.push({ type: 'danger', text: '初動期限超過' });
+    } else if (action.deadlineDate && today === action.deadlineDate && !isCompleted) {
+      warnings.push({ type: 'warning', text: '本日初動期限' });
+    }
+
+    if (metrics.sentCount > 0 && metrics.totalReplyCount === 0) {
+      warnings.push({ type: 'danger', text: '返信0件(要検証)' });
+    }
+
+    const mediaPlans = action.design?.mediaPlans || [];
+    if (metrics.usedMediaCount < 2 && mediaPlans.length < 2) {
+      warnings.push({ type: 'secondary', text: '実施予定2媒体未満' });
+    }
+
+    const expectedSent = Number(action.design?.expectedSentCount || 0);
+    if (expectedSent > 0 && metrics.sentCount < expectedSent && today >= action.deadlineDate) {
+      warnings.push({ type: 'warning', text: '想定送信数未達' });
+    }
+
+    if (!action.design?.targetPersona && !action.design?.targetReplyCount) {
+      warnings.push({ type: 'secondary', text: '初動設計未入力' });
+    }
+
+    if (action.status === '2営業日後レビュー待ち' && (!action.review || !action.review.reviewedAt)) {
+      warnings.push({ type: 'warning', text: 'レビュー未完了' });
+    }
+
+    const nextActions = action.nextActions || [];
+    if (action.review?.reviewedAt && nextActions.length === 0) {
+      warnings.push({ type: 'warning', text: '次のアクション未設定' });
+    }
+
+    if (action.review?.reviewedAt && action.reportStatus !== '報告済み') {
+      warnings.push({ type: 'warning', text: '報告メール未作成' });
+    }
+
+    return warnings;
+  }
+
+  openInitialActionForJob(jobId) {
+    const existing = StorageService.getInitialActionByJobId(jobId);
+    if (existing) {
+      this.currentInitialActionJobId = jobId;
+      this.switchView('initial-action');
+    } else {
+      this.openAddInitialActionModal(jobId);
+    }
+  }
+
+  renderInitialActionView(container) {
+    if (this.currentInitialActionJobId) {
+      this.renderInitialActionDetail(container);
+    } else {
+      this.renderInitialActionList(container);
+    }
+  }
+
+  renderInitialActionList(container) {
+    const rawActions = StorageService.getInitialActions();
+    const allJobs = StorageService.getJobs();
+    const jobsMap = new Map(allJobs.map(j => [j.jobId, j]));
+    const users = StorageService.getActiveUsers();
+    const usersMap = new Map(StorageService.getUsers().map(u => [u.staffId, u.name]));
+    const today = new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }).replace(/\//g, '-');
+
+    const actions = rawActions.map(a => {
+      const job = jobsMap.get(a.jobId) || {
+        jobId: a.jobId,
+        companyName: a.companyName || '（不明企業）',
+        jobTitle: a.jobTitle || '（不明求人）',
+        priorityRank: a.priorityRank || 'UNSET'
+      };
+      const metrics = this.calculateInitialActionMetrics(a);
+      const liveStatus = StorageService.calculateInitialActionStatus(a, metrics, a.review, a.reports, a.checklist);
+      const warnings = this.getInitialActionWarnings(a, metrics);
+      const isOverdue = Boolean(a.deadlineDate && today > a.deadlineDate && liveStatus !== '初動完了' && liveStatus !== '報告済み');
+      const isDueToday = Boolean(a.deadlineDate && today === a.deadlineDate && liveStatus !== '初動完了' && liveStatus !== '報告済み');
+      const isZeroReply = Boolean(metrics.sentCount > 0 && metrics.totalReplyCount === 0);
+
+      return {
+        ...a,
+        _job: job,
+        _metrics: metrics,
+        _status: liveStatus,
+        _warnings: warnings,
+        _isOverdue: isOverdue,
+        _isDueToday: isDueToday,
+        _isZeroReply: isZeroReply
+      };
+    });
+
+    const totalCount = actions.length;
+    const overdueCount = actions.filter(a => a._isOverdue).length;
+    const dueTodayCount = actions.filter(a => a._isDueToday).length;
+    const zeroReplyCount = actions.filter(a => a._isZeroReply).length;
+    const reportedCount = actions.filter(a => a.reportStatus === '報告済み' || a._status === '報告済み').length;
+    const doneCount = actions.filter(a => a._status === '初動完了').length;
+
+    let filtered = actions.filter(a => {
+      if (this.initialActionSearchKeyword) {
+        const kw = this.initialActionSearchKeyword.toLowerCase().trim();
+        const comp = (a._job.companyName || '').toLowerCase();
+        const title = (a._job.jobTitle || '').toLowerCase();
+        if (!comp.includes(kw) && !title.includes(kw)) return false;
+      }
+      if (this.initialActionFilterConsultant && a.consultantStaffId !== this.initialActionFilterConsultant) {
+        return false;
+      }
+      if (this.initialActionFilterSales && a.salesStaffId !== this.initialActionFilterSales) {
+        return false;
+      }
+      if (this.initialActionFilterRank && a._job.priorityRank !== this.initialActionFilterRank) {
+        return false;
+      }
+      if (this.initialActionFilterStatus && a._status !== this.initialActionFilterStatus) {
+        return false;
+      }
+      if (this.initialActionFilterReport) {
+        if (this.initialActionFilterReport === 'reported' && a.reportStatus !== '報告済み') return false;
+        if (this.initialActionFilterReport === 'unreported' && a.reportStatus === '報告済み') return false;
+      }
+      if (this.initialActionFilterOverdue && !a._isOverdue && !a._isDueToday) {
+        return false;
+      }
+      return true;
+    });
+
+    // 優先順位ソート (1.期限超過 2.本日期限 3.返信0件要検証 4.初動実施中 5.報告作成待ち 6.報告済み 7.初動完了)
+    filtered.sort((a, b) => {
+      const getPriority = (item) => {
+        if (item._isOverdue) return 1;
+        if (item._isDueToday) return 2;
+        if (item._isZeroReply) return 3;
+        if (item._status === 'スカウト実施中') return 4;
+        if (item._status === '報告作成待ち' || item._status === '2営業日後レビュー待ち') return 5;
+        if (item._status === '報告済み') return 6;
+        if (item._status === '初動完了') return 7;
+        return 8;
+      };
+
+      const pA = getPriority(a);
+      const pB = getPriority(b);
+      if (pA !== pB) return pA - pB;
+
+      const deadA = a.deadlineDate || '9999-99-99';
+      const deadB = b.deadlineDate || '9999-99-99';
+      if (deadA !== deadB) return deadA.localeCompare(deadB);
+
+      const acqA = a.acquisitionDate || '';
+      const acqB = b.acquisitionDate || '';
+      return acqB.localeCompare(acqA);
+    });
+
+    container.innerHTML = `
+      <div class="initial-action-container">
+        <!-- KPIサマリー -->
+        <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 8px;">
+          <div class="kpi-card">
+            <span class="kpi-label"><i data-lucide="briefcase"></i> 初動管理対象 求人</span>
+            <span class="kpi-value" style="color:var(--color-navy-main);">${totalCount} <span style="font-size:14px;font-weight:normal;">件</span></span>
+            <span class="kpi-sub">進行中 / 完了合計</span>
+          </div>
+          <div class="kpi-card" style="${overdueCount > 0 ? 'border-left:4px solid #E53E3E;' : ''}">
+            <span class="kpi-label"><i data-lucide="alert-circle" style="color:${overdueCount > 0 ? '#E53E3E' : '#DD6B20'};"></i> 期限超過 / 本日期限</span>
+            <span class="kpi-value" style="color:${overdueCount > 0 ? '#E53E3E' : '#DD6B20'};">
+              ${overdueCount} <span style="font-size:13px; font-weight:normal;">超過</span> / ${dueTodayCount} <span style="font-size:13px; font-weight:normal;">本日</span>
+            </span>
+            <span class="kpi-sub">2営業日以内の初動対応</span>
+          </div>
+          <div class="kpi-card" style="${zeroReplyCount > 0 ? 'border-left:4px solid #DD6B20;' : ''}">
+            <span class="kpi-label"><i data-lucide="help-circle" style="color:#DD6B20;"></i> 返信0件 (要検証)</span>
+            <span class="kpi-value" style="color:#DD6B20;">${zeroReplyCount} <span style="font-size:14px;font-weight:normal;">件</span></span>
+            <span class="kpi-sub">送信済かつ返信未達</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label"><i data-lucide="check-circle" style="color:#2F855A;"></i> 報告済 / 初動完了</span>
+            <span class="kpi-value" style="color:#2F855A;">${reportedCount} <span style="font-size:13px; font-weight:normal;">報告</span> / ${doneCount} <span style="font-size:13px; font-weight:normal;">完了</span></span>
+            <span class="kpi-sub">営業報告完了・MTG待ち</span>
+          </div>
+        </div>
+
+        <!-- 検索・絞り込み・操作バー -->
+        <div class="card" style="padding: 14px 18px; margin-bottom: 8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <h3 class="card-title" style="margin:0;"><i data-lucide="rocket" style="color:var(--color-gold-accent);"></i> 新規求人初動管理一覧</h3>
+              <span style="font-size:12px; color:var(--text-secondary);">(${filtered.length} / ${totalCount}件表示)</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button id="btn-open-add-action-modal" class="btn btn-gold btn-sm"><i data-lucide="plus"></i> ＋ 初動管理対象を追加</button>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div style="position:relative; flex:1; min-width:200px; max-width:280px;">
+              <input type="text" id="action-filter-search" class="form-control" placeholder="企業名・求人名で検索..." value="${this.escapeHtml(this.initialActionSearchKeyword)}" style="padding-left:28px; font-size:12px; height:32px;">
+              <i data-lucide="search" style="position:absolute; left:8px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-muted);"></i>
+            </div>
+
+            <select id="action-filter-consultant" class="form-select" style="width:140px; font-size:12px; height:32px;">
+              <option value="">担当コンサル: 全体</option>
+              ${users.map(u => `<option value="${u.staffId}" ${this.initialActionFilterConsultant === u.staffId ? 'selected' : ''}>${this.escapeHtml(u.name)}</option>`).join('')}
+            </select>
+
+            <select id="action-filter-sales" class="form-select" style="width:140px; font-size:12px; height:32px;">
+              <option value="">担当営業: 全体</option>
+              ${users.map(u => `<option value="${u.staffId}" ${this.initialActionFilterSales === u.staffId ? 'selected' : ''}>${this.escapeHtml(u.name)}</option>`).join('')}
+            </select>
+
+            <select id="action-filter-rank" class="form-select" style="width:120px; font-size:12px; height:32px;">
+              <option value="">ランク: 全て</option>
+              ${PRIORITY_RANK_LIST.map(r => `<option value="${r}" ${this.initialActionFilterRank === r ? 'selected' : ''}>${PRIORITY_RANKS[r].fullLabel}</option>`).join('')}
+            </select>
+
+            <select id="action-filter-status" class="form-select" style="width:150px; font-size:12px; height:32px;">
+              <option value="">ステータス: 全て</option>
+              ${INITIAL_ACTION_STATUSES.map(s => `<option value="${s}" ${this.initialActionFilterStatus === s ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+
+            <select id="action-filter-report" class="form-select" style="width:130px; font-size:12px; height:32px;">
+              <option value="">報告状況: 全て</option>
+              <option value="unreported" ${this.initialActionFilterReport === 'unreported' ? 'selected' : ''}>未報告</option>
+              <option value="reported" ${this.initialActionFilterReport === 'reported' ? 'selected' : ''}>報告済み</option>
+            </select>
+
+            <label style="display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; cursor:pointer; margin-left:4px;">
+              <input type="checkbox" id="action-filter-overdue-chk" ${this.initialActionFilterOverdue ? 'checked' : ''}>
+              <span style="color:#E53E3E;">期限切れ・本日期限のみ</span>
+            </label>
+
+            <button id="btn-reset-action-filter" class="btn btn-secondary btn-sm" style="height:32px; font-size:11.5px;">条件クリア</button>
+          </div>
+        </div>
+
+        <!-- 初動一覧テーブル -->
+        <div class="card" style="padding:0; overflow:hidden;">
+          <div style="overflow-x:auto;">
+            <table class="data-table" style="margin:0; font-size:12px;">
+              <thead>
+                <tr>
+                  <th style="min-width:180px;">企業名 / 求人名</th>
+                  <th style="text-align:center; min-width:70px;">ランク</th>
+                  <th style="min-width:110px;">担当営業 / コンサル</th>
+                  <th style="min-width:105px;">獲得日 / 初回MTG</th>
+                  <th style="min-width:105px;">初動期限</th>
+                  <th style="text-align:center; min-width:85px;">実施媒体数</th>
+                  <th style="text-align:right; min-width:70px;">送信数</th>
+                  <th style="text-align:right; min-width:85px;">返信 (総/有効)</th>
+                  <th style="text-align:right; min-width:85px;">有効返信率</th>
+                  <th style="text-align:center; min-width:120px;">初動ステータス</th>
+                  <th style="text-align:center; min-width:85px;">報告状況</th>
+                  <th style="min-width:130px;">警告・アラート</th>
+                  <th style="text-align:center; min-width:85px;">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${filtered.length === 0 ? `
+                  <tr>
+                    <td colspan="13" style="text-align:center; padding:32px; color:var(--text-muted); font-size:13px;">
+                      ${totalCount === 0 ? '初動管理対象の求人はまだ登録されていません。「＋ 初動管理対象を追加」から新規案件を登録してください。' : '条件に一致する初動管理案件はありません。'}
+                    </td>
+                  </tr>
+                ` : filtered.map(a => {
+                  const job = a._job;
+                  const m = a._metrics;
+                  const st = a._status;
+                  const stBadge = INITIAL_ACTION_STATUS_BADGES[st] || { label: st, className: 'badge-gray' };
+                  const consultantName = usersMap.get(a.consultantStaffId) || '未設定';
+                  const salesName = usersMap.get(a.salesStaffId) || '未設定';
+                  const rankHtml = this.renderPriorityRankBadge(job.priorityRank, false);
+
+                  let deadlineBadgeHtml = `<span style="font-size:12px; font-weight:600;">${a.deadlineDate || '-'}</span>`;
+                  if (a._isOverdue) {
+                    deadlineBadgeHtml = `<span class="badge badge-overdue" title="初動スカウト完了期限を超過しています">${a.deadlineDate} (超過)</span>`;
+                  } else if (a._isDueToday) {
+                    deadlineBadgeHtml = `<span class="badge badge-due-today" title="本日が初動スカウト完了期限です">${a.deadlineDate} (本日)</span>`;
+                  }
+
+                  const reportBadgeHtml = a.reportStatus === '報告済み'
+                    ? '<span class="badge badge-success">報告済み</span>'
+                    : '<span class="badge badge-gray">未報告</span>';
+
+                  const warningsHtml = a._warnings.length > 0
+                    ? a._warnings.map(w => `<span class="badge badge-${w.type}" style="margin:1px 2px; font-size:10.5px;">${this.escapeHtml(w.text)}</span>`).join('')
+                    : '<span style="color:var(--text-muted); font-size:11px;">正常</span>';
+
+                  return `
+                    <tr style="${a._isOverdue ? 'background:#FFFDFD;' : a._isZeroReply ? 'background:#FFFDF9;' : ''}">
+                      <td>
+                        <a href="javascript:void(0)" class="link-open-action-detail" data-job-id="${a.jobId}" style="text-decoration:none; display:block;">
+                          <strong style="color:var(--color-navy-main); font-size:12.5px;">${this.escapeHtml(job.companyName)}</strong>
+                          <div style="color:var(--text-secondary); font-size:11.5px; margin-top:2px;">${this.escapeHtml(job.jobTitle)}</div>
+                        </a>
+                      </td>
+                      <td style="text-align:center;">${rankHtml}</td>
+                      <td>
+                        <div style="font-size:11.5px;"><span style="color:var(--text-muted);">営:</span> ${this.escapeHtml(salesName)}</div>
+                        <div style="font-size:11.5px; font-weight:600; color:var(--color-navy-main);"><span style="color:var(--text-muted); font-weight:normal;">コ:</span> ${this.escapeHtml(consultantName)}</div>
+                      </td>
+                      <td>
+                        <div style="font-size:11.5px;"><span style="color:var(--text-muted);">獲得:</span> ${a.acquisitionDate || '-'}</div>
+                        <div style="font-size:11.5px;"><span style="color:var(--text-muted);">MTG:</span> ${a.firstMeetingDate || '-'}</div>
+                      </td>
+                      <td>${deadlineBadgeHtml}</td>
+                      <td style="text-align:center;">
+                        <span style="font-weight:700; ${m.usedMediaCount < 2 ? 'color:#E53E3E;' : 'color:var(--color-navy-main);'}">
+                          ${m.usedMediaCount} 媒体
+                        </span>
+                        ${m.usedMediaCount < 2 ? '<div style="font-size:10px; color:#E53E3E;">(2媒体推奨)</div>' : ''}
+                      </td>
+                      <td style="text-align:right; font-weight:700;">${m.sentCount}通</td>
+                      <td style="text-align:right;">
+                        <span style="font-weight:600;">${m.totalReplyCount}</span> / <strong style="color:var(--color-gold-accent);">${m.effectiveReplyCount}</strong>
+                      </td>
+                      <td style="text-align:right; font-weight:700; color:var(--color-gold-accent);">${m.effectiveReplyRateFormatted}</td>
+                      <td style="text-align:center;">
+                        <span class="badge ${stBadge.className}" style="white-space:nowrap; padding:3px 8px;">${stBadge.label}</span>
+                        ${a.statusManualOverride ? '<span style="font-size:9.5px; color:var(--text-muted); display:block; margin-top:1px;">(手動)</span>' : ''}
+                      </td>
+                      <td style="text-align:center;">${reportBadgeHtml}</td>
+                      <td>${warningsHtml}</td>
+                      <td style="text-align:center;">
+                        <button class="btn btn-gold btn-sm btn-action-detail-open" data-job-id="${a.jobId}" style="white-space:nowrap; padding:3px 8px; font-size:11.5px;">
+                          詳細・管理
+                        </button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+
+    this.bindInitialActionListEvents(container);
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  bindInitialActionListEvents(container) {
+    container.querySelector('#action-filter-search')?.addEventListener('input', (e) => {
+      this.initialActionSearchKeyword = e.target.value;
+      this.renderInitialActionList(container);
+    });
+
+    container.querySelector('#action-filter-consultant')?.addEventListener('change', (e) => {
+      this.initialActionFilterConsultant = e.target.value;
+      this.renderInitialActionList(container);
+    });
+
+    container.querySelector('#action-filter-sales')?.addEventListener('change', (e) => {
+      this.initialActionFilterSales = e.target.value;
+      this.renderInitialActionList(container);
+    });
+
+    container.querySelector('#action-filter-rank')?.addEventListener('change', (e) => {
+      this.initialActionFilterRank = e.target.value;
+      this.renderInitialActionList(container);
+    });
+
+    container.querySelector('#action-filter-status')?.addEventListener('change', (e) => {
+      this.initialActionFilterStatus = e.target.value;
+      this.renderInitialActionList(container);
+    });
+
+    container.querySelector('#action-filter-report')?.addEventListener('change', (e) => {
+      this.initialActionFilterReport = e.target.value;
+      this.renderInitialActionList(container);
+    });
+
+    container.querySelector('#action-filter-overdue-chk')?.addEventListener('change', (e) => {
+      this.initialActionFilterOverdue = e.target.checked;
+      this.renderInitialActionList(container);
+    });
+
+    container.querySelector('#btn-reset-action-filter')?.addEventListener('click', () => {
+      this.initialActionSearchKeyword = '';
+      this.initialActionFilterConsultant = '';
+      this.initialActionFilterSales = '';
+      this.initialActionFilterRank = '';
+      this.initialActionFilterStatus = '';
+      this.initialActionFilterReport = '';
+      this.initialActionFilterOverdue = false;
+      this.renderInitialActionList(container);
+    });
+
+    container.querySelector('#btn-open-add-action-modal')?.addEventListener('click', () => {
+      this.openAddInitialActionModal();
+    });
+
+    container.querySelectorAll('.link-open-action-detail, .btn-action-detail-open').forEach(el => {
+      el.addEventListener('click', () => {
+        const jobId = el.getAttribute('data-job-id');
+        this.currentInitialActionJobId = jobId;
+        this.renderCurrentView();
+      });
+    });
+  }
+
+  openAddInitialActionModal(preselectedJobId = '') {
+    const allJobs = StorageService.getActiveJobs();
+    const existingJobIds = new Set(StorageService.getInitialActions().map(a => a.jobId));
+    const targetJobs = allJobs.filter(j => !existingJobIds.has(j.jobId) || j.jobId === preselectedJobId);
+    const users = StorageService.getActiveUsers();
+    const todayStr = new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }).replace(/\//g, '-');
+    const defaultDeadline = StorageService.calculateBusinessDaysLater(todayStr, 2);
+
+    const mContainer = document.getElementById('modal-container');
+    if (!mContainer) return;
+
+    mContainer.innerHTML = `
+      <div class="modal-overlay">
+        <div class="modal-card" style="max-width: 640px;">
+          <div class="modal-header">
+            <h3 class="modal-title"><i data-lucide="rocket" style="color:var(--color-gold-accent);"></i> 新規求人 初動管理の開始</h3>
+            <button class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body" style="font-size:13px; max-height:75vh; overflow-y:auto;">
+            <div style="background:#F8FAFC; border:1px solid #E2E8F0; padding:10px 14px; border-radius:6px; margin-bottom:14px; color:var(--text-secondary); font-size:12px;">
+              新規求人獲得後の初動設計・2営業日スカウト実施・営業報告メール作成を連動して管理します。<br>
+              初動スカウト完了期限は、求人獲得日翌日から土日を除外した<strong>2営業日後</strong>が自動設定されます。
+            </div>
+
+            <div class="form-group" style="margin-bottom:12px;">
+              <label class="form-label" style="font-weight:700;">対象求人 <span style="color:var(--color-danger);">*</span></label>
+              <select id="modal-add-action-job" class="form-select">
+                <option value="">-- 対象求人を選択してください --</option>
+                ${targetJobs.map(j => `
+                  <option value="${j.jobId}" ${j.jobId === preselectedJobId ? 'selected' : ''}>
+                    ${this.escapeHtml(j.companyName)} ／ ${this.escapeHtml(j.jobTitle)} (${j.priorityRank})
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+              <div class="form-group" style="margin:0;">
+                <label class="form-label" style="font-weight:700;">求人獲得日 <span style="color:var(--color-danger);">*</span></label>
+                <input type="date" id="modal-add-action-acq-date" class="form-control" value="${todayStr}">
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label class="form-label" style="font-weight:700;">初動スカウト完了期限 <span style="color:var(--color-danger);">*</span></label>
+                <input type="date" id="modal-add-action-deadline" class="form-control" value="${defaultDeadline}">
+                <div style="font-size:10.5px; color:var(--text-muted); margin-top:2px;">※獲得日翌日から2営業日後 (手動変更可)</div>
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+              <div class="form-group" style="margin:0;">
+                <label class="form-label" style="font-weight:700;">担当コンサルタント <span style="color:var(--color-danger);">*</span></label>
+                <select id="modal-add-action-consultant" class="form-select">
+                  <option value="">-- 選択 --</option>
+                  ${users.map(u => `<option value="${u.staffId}" ${this.currentStaff && this.currentStaff.staffId === u.staffId ? 'selected' : ''}>${this.escapeHtml(u.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label class="form-label" style="font-weight:700;">担当営業 <span style="color:var(--color-danger);">*</span></label>
+                <select id="modal-add-action-sales" class="form-select">
+                  <option value="">-- 選択 --</option>
+                  ${users.map(u => `<option value="${u.staffId}">${this.escapeHtml(u.name)}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-bottom:12px;">
+              <div class="form-group" style="margin:0;">
+                <label class="form-label">初回MTG予定日</label>
+                <input type="date" id="modal-add-action-mtg-date" class="form-control">
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label class="form-label">案件難易度</label>
+                <select id="modal-add-action-difficulty" class="form-select">
+                  <option value="通常" selected>通常</option>
+                  <option value="低">低</option>
+                  <option value="高">高</option>
+                  <option value="最難関">最難関</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label class="form-label">採用予定人数</label>
+                <input type="number" id="modal-add-action-hiring-count" class="form-control" value="1" min="1">
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:12px;">
+              <label class="form-label">補足事項・特記事項</label>
+              <textarea id="modal-add-action-notes" class="form-control" rows="2" placeholder="企業からの緊急度や初期の前提条件など..."></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary modal-close">キャンセル</button>
+            <button id="btn-submit-add-action" class="btn btn-gold"><i data-lucide="check"></i> 初動管理を開始する</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const closeModal = () => { mContainer.innerHTML = ''; };
+    mContainer.querySelectorAll('.modal-close').forEach(el => el.onclick = closeModal);
+
+    // 獲得日変更時の期限日自動連動
+    const acqInp = mContainer.querySelector('#modal-add-action-acq-date');
+    const deadInp = mContainer.querySelector('#modal-add-action-deadline');
+    acqInp?.addEventListener('change', () => {
+      if (acqInp.value) {
+        deadInp.value = StorageService.calculateBusinessDaysLater(acqInp.value, 2);
+      }
+    });
+
+    mContainer.querySelector('#btn-submit-add-action')?.addEventListener('click', () => {
+      const jobId = mContainer.querySelector('#modal-add-action-job').value;
+      const acqDate = acqInp.value;
+      const deadline = deadInp.value;
+      const consultantStaffId = mContainer.querySelector('#modal-add-action-consultant').value;
+      const salesStaffId = mContainer.querySelector('#modal-add-action-sales').value;
+      const firstMeetingDate = mContainer.querySelector('#modal-add-action-mtg-date').value;
+      const jobDifficulty = mContainer.querySelector('#modal-add-action-difficulty').value;
+      const hiringCount = Number(mContainer.querySelector('#modal-add-action-hiring-count').value) || 1;
+      const notes = mContainer.querySelector('#modal-add-action-notes').value;
+
+      if (!jobId) {
+        alert('対象の求人を選択してください。');
+        return;
+      }
+      if (!acqDate || !deadline) {
+        alert('求人獲得日と初動スカウト完了期限を入力してください。');
+        return;
+      }
+
+      const job = StorageService.getJobById(jobId);
+      const newAction = {
+        jobId,
+        companyId: job ? job.companyId : '',
+        companyName: job ? job.companyName : '',
+        jobTitle: job ? job.jobTitle : '',
+        priorityRank: job ? job.priorityRank : 'UNSET',
+        acquisitionDate: acqDate,
+        deadlineDate: deadline,
+        firstMeetingDate,
+        consultantStaffId,
+        salesStaffId,
+        jobDifficulty,
+        hiringCount,
+        notes,
+        status: '初動未設計',
+        statusManualOverride: false
+      };
+
+      try {
+        const saved = StorageService.saveInitialAction(newAction, this.currentStaff ? this.currentStaff.staffId : '');
+        closeModal();
+        this.currentInitialActionJobId = saved.jobId;
+        this.renderCurrentView();
+      } catch (err) {
+        alert(`登録エラー: ${err.message}`);
+      }
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+
+  // =========================================================================
+  // 初動管理 詳細画面 (ステップバー・6大タブ・計画対比・レビュー・報告メール)
+  // =========================================================================
+  renderInitialActionDetail(container) {
+    const action = StorageService.getInitialActionByJobId(this.currentInitialActionJobId);
+    if (!action) {
+      this.currentInitialActionJobId = null;
+      this.renderInitialActionList(container);
+      return;
+    }
+
+    const job = StorageService.getJobById(action.jobId) || {
+      jobId: action.jobId,
+      companyName: action.companyName || '（不明企業）',
+      jobTitle: action.jobTitle || '（不明求人）',
+      priorityRank: action.priorityRank || 'UNSET',
+      status: '準備中'
+    };
+
+    const metrics = this.calculateInitialActionMetrics(action);
+    const liveStatus = StorageService.calculateInitialActionStatus(action, metrics, action.review, action.reports, action.checklist);
+    const usersMap = new Map(StorageService.getUsers().map(u => [u.staffId, u.name]));
+    const consultantName = usersMap.get(action.consultantStaffId) || '未設定';
+    const salesName = usersMap.get(action.salesStaffId) || '未設定';
+    const today = new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }).replace(/\//g, '-');
+
+    const isConsultant = Boolean(this.currentStaff && action.consultantStaffId === this.currentStaff.staffId);
+    const canEdit = Boolean(this.isAdminMode || isConsultant);
+
+    const isOverdue = Boolean(action.deadlineDate && today > action.deadlineDate && liveStatus !== '初動完了' && liveStatus !== '報告済み');
+    const isDueToday = Boolean(action.deadlineDate && today === action.deadlineDate && liveStatus !== '初動完了' && liveStatus !== '報告済み');
+
+    let deadlineBadge = `<span style="font-weight:700;">${action.deadlineDate || '-'}</span>`;
+    if (isOverdue) {
+      deadlineBadge = `<span class="badge badge-overdue">${action.deadlineDate} (期限超過)</span>`;
+    } else if (isDueToday) {
+      deadlineBadge = `<span class="badge badge-due-today">${action.deadlineDate} (本日期限)</span>`;
+    }
+
+    const rankHtml = this.renderPriorityRankBadge(job.priorityRank, false);
+    const activeTab = this.initialActionActiveTab || 'design';
+
+    // 6ステップの完了状態
+    const stepStates = [
+      { id: 'step_design', num: 1, label: '初動設計', done: Boolean(action.design?.targetPersona || (action.design?.mediaPlans && action.design.mediaPlans.length > 0)), tab: 'design' },
+      { id: 'step_scout', num: 2, label: 'スカウト実施', done: Boolean(metrics.sentCount > 0), tab: 'comparison' },
+      { id: 'step_review', num: 3, label: '2営業日後レビュー', done: Boolean(action.review?.reviewedAt), tab: 'review' },
+      { id: 'step_report', num: 4, label: '営業報告', done: Boolean(action.reportStatus === '報告済み' || (action.reports && action.reports.length > 0)), tab: 'report' },
+      { id: 'step_actions', num: 5, label: '追加対応', done: Boolean(action.nextActions && action.nextActions.length > 0 && action.nextActions.every(a => a.completed)), tab: 'review' },
+      { id: 'step_mtg', num: 6, label: '初回MTG', done: Boolean(action.firstMeetingReview?.updatedAt), tab: 'mtg' }
+    ];
+
+    container.innerHTML = `
+      <div class="initial-action-container">
+        <!-- 画面上部ヘッダー -->
+        <div class="card" style="padding: 14px 20px; margin-bottom: 0;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+            <div>
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                <button id="btn-back-to-action-list" class="btn btn-secondary btn-sm" style="padding:4px 10px;">
+                  <i data-lucide="chevron-left"></i> 一覧へ戻る
+                </button>
+                ${rankHtml}
+                <span class="badge ${action.reportStatus === '報告済み' ? 'badge-success' : 'badge-gray'}">
+                  ${action.reportStatus === '報告済み' ? '営業報告済' : '営業未報告'}
+                </span>
+              </div>
+              <h2 style="font-size:18px; font-weight:700; color:var(--color-navy-main); margin:0;">
+                ${this.escapeHtml(job.companyName)}
+                <span style="font-size:15px; font-weight:normal; color:var(--text-secondary); margin-left:8px;">${this.escapeHtml(job.jobTitle)}</span>
+              </h2>
+              <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:6px; font-size:12px; color:var(--text-secondary);">
+                <span>担当コンサル: <strong style="color:var(--color-navy-main);">${this.escapeHtml(consultantName)}</strong></span>
+                <span>担当営業: <strong>${this.escapeHtml(salesName)}</strong></span>
+                <span>獲得日: <strong>${action.acquisitionDate || '-'}</strong></span>
+                <span>初動スカウト期限: ${deadlineBadge}</span>
+                <span>初回MTG予定日: <strong>${action.firstMeetingDate || '未定'}</strong></span>
+              </div>
+            </div>
+
+            <!-- ステータス変更コントローラー & クイックアクション -->
+            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:11.5px; font-weight:700; color:var(--text-secondary);">初動ステータス:</span>
+                <select id="detail-action-status-select" class="form-select" style="width:170px; font-size:12px; height:32px; font-weight:700;" ${!canEdit ? 'disabled' : ''}>
+                  ${INITIAL_ACTION_STATUSES.map(s => `
+                    <option value="${s}" ${liveStatus === s ? 'selected' : ''}>${s}</option>
+                  `).join('')}
+                </select>
+                ${action.statusManualOverride ? `
+                  <button id="btn-reset-status-auto" class="btn btn-secondary btn-sm" style="height:32px; font-size:10.5px; padding:2px 8px;" title="ステータスを登録内容・実績からの自動判定に戻します">
+                    自動判定に戻す
+                  </button>
+                ` : ''}
+              </div>
+
+              <div style="display:flex; align-items:center; gap:8px;">
+                <button id="btn-quick-create-report" class="btn btn-gold btn-sm"><i data-lucide="mail"></i> 報告メールを作成</button>
+                ${this.isAdminMode ? `
+                  <button id="btn-delete-initial-action" class="btn btn-danger btn-sm" title="初動管理を解除"><i data-lucide="trash-2"></i> 解除</button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+
+          ${!canEdit ? `
+            <div class="notice-box" style="margin:8px 0 0 0; background:#EDF2F7; border-color:#CBD5E0; color:#4A5568; font-size:12px; padding:8px 12px;">
+              <i data-lucide="lock" style="width:14px;height:14px;"></i>
+              <span>現在は<strong>閲覧モード</strong>です。入力・編集・保存・報告は担当コンサル（${this.escapeHtml(consultantName)}）または管理者モードのみ実行可能です。</span>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- 進捗ステップ表示 (ステップウィザード) -->
+        <div class="step-wizard-bar">
+          ${stepStates.map((st, i) => `
+            <div class="step-wizard-item ${st.tab === activeTab ? 'active' : ''} ${st.done ? 'completed' : ''}" data-target-tab="${st.tab}">
+              <div class="step-wizard-circle">
+                ${st.done ? '<i data-lucide="check" style="width:13px;height:13px;"></i>' : st.num}
+              </div>
+              <span>${st.label}</span>
+            </div>
+            ${i < stepStates.length - 1 ? '<div class="step-wizard-arrow"><i data-lucide="chevron-right"></i></div>' : ''}
+          `).join('')}
+        </div>
+
+        <!-- タブバー -->
+        <div class="action-tab-bar">
+          <button class="action-tab-btn ${activeTab === 'design' ? 'active' : ''}" data-tab="design">
+            <i data-lucide="compass"></i> 1. 基本情報 & 初動設計
+          </button>
+          <button class="action-tab-btn ${activeTab === 'checklist' ? 'active' : ''}" data-tab="checklist">
+            <i data-lucide="check-square"></i> 2. 初動チェックリスト
+          </button>
+          <button class="action-tab-btn ${activeTab === 'comparison' ? 'active' : ''}" data-tab="comparison">
+            <i data-lucide="bar-chart-2"></i> 3. 実績・計画比較
+          </button>
+          <button class="action-tab-btn ${activeTab === 'review' ? 'active' : ''}" data-tab="review">
+            <i data-lucide="clipboard-check"></i> 4. 2営業日後レビュー & 候補者
+          </button>
+          <button class="action-tab-btn ${activeTab === 'report' ? 'active' : ''}" data-tab="report">
+            <i data-lucide="mail"></i> 5. 営業報告メール
+          </button>
+          <button class="action-tab-btn ${activeTab === 'mtg' ? 'active' : ''}" data-tab="mtg">
+            <i data-lucide="users"></i> 6. 初回MTG振り返り
+          </button>
+        </div>
+
+        <!-- タブコンテンツ領域 -->
+        <div id="initial-action-tab-content">
+          ${activeTab === 'design' ? this.renderInitialActionDesignTab(action, job, canEdit) : ''}
+          ${activeTab === 'checklist' ? this.renderInitialActionChecklistTab(action, canEdit) : ''}
+          ${activeTab === 'comparison' ? this.renderInitialActionComparisonTab(action, job, metrics) : ''}
+          ${activeTab === 'review' ? this.renderInitialActionReviewTab(action, job, metrics, canEdit) : ''}
+          ${activeTab === 'report' ? this.renderInitialActionReportTab(action, job, metrics, canEdit) : ''}
+          ${activeTab === 'mtg' ? this.renderInitialActionMtgTab(action, job, metrics, canEdit) : ''}
+        </div>
+      </div>
+    `;
+
+    this.bindInitialActionDetailEvents(container, action, canEdit);
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+
+  // 1. 基本情報 & 初動設計タブ
+  renderInitialActionDesignTab(action, job, canEdit) {
+    const users = StorageService.getActiveUsers();
+    const mediaList = StorageService.getActiveMediaList();
+    const existingMessages = StorageService.getMessages().filter(m => m.jobId === action.jobId);
+    const design = action.design || {};
+    const mediaPlans = design.mediaPlans || [];
+
+    const isSingleMedia = mediaPlans.length === 1;
+
+    return `
+      <div class="card" style="padding: 18px 22px;">
+        <h4 style="font-size:14.5px; font-weight:700; color:var(--color-navy-main); margin-bottom:14px; border-bottom:1px solid var(--border-light); padding-bottom:8px;">
+          <i data-lucide="edit-3" style="color:var(--color-gold-accent);"></i> ■ 基本情報 & ターゲット・ペルソナ設計
+        </h4>
+
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-bottom:16px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" style="font-weight:700;">求人獲得日</label>
+            <input type="date" id="design-acq-date" class="form-control" value="${action.acquisitionDate || ''}" ${!canEdit ? 'disabled' : ''}>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" style="font-weight:700;">初動スカウト期限</label>
+            <input type="date" id="design-deadline-date" class="form-control" value="${action.deadlineDate || ''}" ${!canEdit ? 'disabled' : ''}>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" style="font-weight:700;">担当コンサルタント</label>
+            <select id="design-consultant-select" class="form-select" ${!canEdit ? 'disabled' : ''}>
+              ${users.map(u => `<option value="${u.staffId}" ${action.consultantStaffId === u.staffId ? 'selected' : ''}>${this.escapeHtml(u.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" style="font-weight:700;">担当営業</label>
+            <select id="design-sales-select" class="form-select" ${!canEdit ? 'disabled' : ''}>
+              <option value="">-- 未選択 --</option>
+              ${users.map(u => `<option value="${u.staffId}" ${action.salesStaffId === u.staffId ? 'selected' : ''}>${this.escapeHtml(u.name)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:18px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">初回MTG予定日</label>
+            <input type="date" id="design-first-mtg-date" class="form-control" value="${action.firstMeetingDate || ''}" ${!canEdit ? 'disabled' : ''}>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">案件難易度</label>
+            <select id="design-difficulty-select" class="form-select" ${!canEdit ? 'disabled' : ''}>
+              <option value="低" ${action.jobDifficulty === '低' ? 'selected' : ''}>低</option>
+              <option value="通常" ${(action.jobDifficulty || '通常') === '通常' ? 'selected' : ''}>通常</option>
+              <option value="高" ${action.jobDifficulty === '高' ? 'selected' : ''}>高</option>
+              <option value="最難関" ${action.jobDifficulty === '最難関' ? 'selected' : ''}>最難関</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">採用予定人数</label>
+            <input type="number" id="design-hiring-count" class="form-control" value="${action.hiringCount || 1}" min="1" ${!canEdit ? 'disabled' : ''}>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:14px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" style="font-weight:700;">想定ターゲット</label>
+            <textarea id="design-target-persona" class="form-control" rows="2" placeholder="例: SIerでJava/AWS開発経験3年以上の即戦力エンジニア" ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(design.targetPersona || '')}</textarea>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" style="font-weight:700;">この求人で決定する人物像</label>
+            <textarea id="design-decision-persona" class="form-control" rows="2" placeholder="例: 自社プロダクト志向が強く、リーダーシップを発揮したい30代前半" ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(design.decisionPersona || '')}</textarea>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-bottom:14px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">必須経験</label>
+            <textarea id="design-required-exp" class="form-control" rows="2" placeholder="Must条件..." ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(design.requiredExperience || '')}</textarea>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">歓迎経験</label>
+            <textarea id="design-preferred-exp" class="form-control" rows="2" placeholder="Want条件..." ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(design.preferredExperience || '')}</textarea>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">許容できる隣接経験</label>
+            <textarea id="design-acceptable-exp" class="form-control" rows="2" placeholder="異業界経験、類似言語など..." ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(design.acceptableExperience || '')}</textarea>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-bottom:14px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">想定年齢層</label>
+            <input type="text" id="design-target-age" class="form-control" value="${this.escapeHtml(design.targetAgeRange || '')}" placeholder="例: 28〜35歳" ${!canEdit ? 'disabled' : ''}>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">想定年収帯</label>
+            <input type="text" id="design-target-salary" class="form-control" value="${this.escapeHtml(design.targetSalaryRange || '')}" placeholder="例: 550〜700万円" ${!canEdit ? 'disabled' : ''}>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">勤務地条件</label>
+            <input type="text" id="design-work-location" class="form-control" value="${this.escapeHtml(design.workLocation || '')}" placeholder="例: 東京本社 / リモート週3" ${!canEdit ? 'disabled' : ''}>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">転職回数等の条件</label>
+            <input type="text" id="design-job-change-count" class="form-control" value="${this.escapeHtml(design.jobChangeCount || '')}" placeholder="例: 2回まで" ${!canEdit ? 'disabled' : ''}>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:20px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">想定される転職理由</label>
+            <textarea id="design-job-change-reason" class="form-control" rows="2" placeholder="例: 年収UP、上流工程への挑戦、自社開発への転身" ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(design.jobChangeReason || '')}</textarea>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">想定される懸念・ハードル</label>
+            <textarea id="design-concerns" class="form-control" rows="2" placeholder="例: 知名度、面接回数、競合大手とのバッティング" ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(design.concerns || '')}</textarea>
+          </div>
+        </div>
+
+        <!-- ■ 数値計画 -->
+        <h4 style="font-size:14.5px; font-weight:700; color:var(--color-navy-main); margin-bottom:12px; border-bottom:1px solid var(--border-light); padding-bottom:8px;">
+          <i data-lucide="calculator" style="color:var(--color-gold-accent);"></i> ■ 数値計画 (初動スカウト目標)
+        </h4>
+
+        <div style="background:#FAF8F5; border:1px solid #E6D5B8; padding:14px 18px; border-radius:6px; margin-bottom:20px;">
+          <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; align-items:flex-end;">
+            <div class="form-group" style="margin:0;">
+              <label class="form-label" style="font-weight:700; color:var(--color-navy-main);">目標返信数 (件)</label>
+              <input type="number" id="design-target-reply" class="form-control" value="${design.targetReplyCount !== undefined ? design.targetReplyCount : 2}" min="1" ${!canEdit ? 'disabled' : ''}>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label" style="font-weight:700;">想定総返信率 (%)</label>
+              <input type="number" id="design-expected-reply-rate" class="form-control" step="0.1" value="${design.expectedTotalReplyRate !== undefined ? design.expectedTotalReplyRate : 2.0}" min="0.1" max="100" ${!canEdit ? 'disabled' : ''}>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">想定有効返信率 (%)</label>
+              <input type="number" id="design-expected-eff-rate" class="form-control" step="0.1" value="${design.expectedEffectiveReplyRate !== undefined ? design.expectedEffectiveReplyRate : 1.0}" min="0" max="100" ${!canEdit ? 'disabled' : ''}>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label" style="font-weight:700; color:var(--color-navy-main);">
+                想定送信数 (通)
+                <span style="font-size:10px; font-weight:normal; color:var(--text-muted);">自動計算</span>
+              </label>
+              <input type="number" id="design-expected-sent" class="form-control" value="${design.expectedSentCount !== undefined ? design.expectedSentCount : 100}" min="1" ${!canEdit ? 'disabled' : ''}>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label" style="font-weight:700; color:var(--color-gold-hover);">初回送信目標数 (通)</label>
+              <input type="number" id="design-initial-goal" class="form-control" value="${design.initialSentGoal !== undefined ? design.initialSentGoal : 100}" min="1" ${!canEdit ? 'disabled' : ''}>
+            </div>
+          </div>
+          <div style="font-size:11.5px; color:var(--text-secondary); margin-top:8px;">
+            ※想定送信数 ＝ 目標返信数 ÷ (想定返信率 ÷ 100) で自動算出されます（手動修正も可能です）。
+          </div>
+        </div>
+
+        <!-- ■ 媒体計画 -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid var(--border-light); padding-bottom:8px;">
+          <h4 style="font-size:14.5px; font-weight:700; color:var(--color-navy-main); margin:0;">
+            <i data-lucide="layers" style="color:var(--color-gold-accent);"></i> ■ 媒体計画 (原則2媒体以上の選定推奨)
+          </h4>
+          ${canEdit ? `
+            <button id="btn-add-media-plan-row" class="btn btn-secondary btn-sm"><i data-lucide="plus"></i> ＋ 媒体を追加</button>
+          ` : ''}
+        </div>
+
+        ${isSingleMedia ? `
+          <div class="notice-box" style="margin-bottom:12px; background:#FFFAF0; border-color:#FBD38D; color:#DD6B20; font-size:12px; padding:8px 12px;">
+            <i data-lucide="alert-triangle" style="width:14px;height:14px;"></i>
+            <span><strong>警告:</strong> 初動では2媒体以上でのスカウト実施が推奨されています。別媒体の追加選定をご検討ください。</span>
+          </div>
+        ` : ''}
+
+        <div id="media-plans-container" style="display:flex; flex-direction:column; gap:8px; margin-bottom:20px;">
+          ${mediaPlans.length === 0 ? `
+            <div style="padding:16px; text-align:center; background:#F8FAFC; border:1px dashed #CBD5E0; border-radius:6px; color:var(--text-muted); font-size:12px;">
+              媒体計画がまだ登録されていません。「＋ 媒体を追加」から利用する媒体（ビズリーチ、AMBI、ミドル等）を選定してください。
+            </div>
+          ` : mediaPlans.map((mp, idx) => `
+            <div class="card media-plan-row" data-index="${idx}" style="padding:12px 16px; margin:0; background:#FAFAFA; border:1px solid #E2E8F0;">
+              <div style="display:grid; grid-template-columns: 140px 100px 100px 1fr 1fr ${canEdit ? '40px' : ''}; gap:10px; align-items:center;">
+                <div>
+                  <label style="font-size:10px; color:var(--text-muted); display:block;">媒体</label>
+                  <select class="form-select mp-media-id" style="font-size:12px; height:30px;" ${!canEdit ? 'disabled' : ''}>
+                    ${mediaList.map(m => `<option value="${m.id}" ${mp.mediaId === m.id ? 'selected' : ''}>${this.escapeHtml(m.name)}</option>`).join('')}
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size:10px; color:var(--text-muted); display:block;">優先順位</label>
+                  <select class="form-select mp-priority" style="font-size:12px; height:30px;" ${!canEdit ? 'disabled' : ''}>
+                    <option value="1" ${mp.priority == 1 ? 'selected' : ''}>1位 (最優先)</option>
+                    <option value="2" ${mp.priority == 2 ? 'selected' : ''}>2位</option>
+                    <option value="3" ${mp.priority == 3 ? 'selected' : ''}>3位</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size:10px; color:var(--text-muted); display:block;">送信目標数</label>
+                  <input type="number" class="form-control mp-target-sent" value="${mp.targetSentCount || 50}" style="font-size:12px; height:30px;" ${!canEdit ? 'disabled' : ''}>
+                </div>
+                <div>
+                  <label style="font-size:10px; color:var(--text-muted); display:block;">検索条件・キーワード</label>
+                  <input type="text" class="form-control mp-search-cond" value="${this.escapeHtml(mp.searchConditions || '')}" placeholder="職種カテゴリ、年収、経験ワード..." style="font-size:12px; height:30px;" ${!canEdit ? 'disabled' : ''}>
+                </div>
+                <div>
+                  <label style="font-size:10px; color:var(--text-muted); display:block;">対象者条件・補足</label>
+                  <input type="text" class="form-control mp-target-crit" value="${this.escapeHtml(mp.targetCriteria || '')}" placeholder="対象者プロファイル条件..." style="font-size:12px; height:30px;" ${!canEdit ? 'disabled' : ''}>
+                </div>
+                ${canEdit ? `
+                  <div style="text-align:right;">
+                    <button class="btn btn-secondary btn-sm btn-remove-mp-row" style="color:#E53E3E; padding:4px 8px;" title="削除">&times;</button>
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <!-- ■ スカウト文面 -->
+        <h4 style="font-size:14.5px; font-weight:700; color:var(--color-navy-main); margin-bottom:12px; border-bottom:1px solid var(--border-light); padding-bottom:8px;">
+          <i data-lucide="file-text" style="color:var(--color-gold-accent);"></i> ■ 使用予定のスカウト文面
+        </h4>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:14px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">既存スカウト文面マスタから選択</label>
+            <select id="design-msg-select" class="form-select" ${!canEdit ? 'disabled' : ''}>
+              <option value="">-- スカウト文面を選択 (任意) --</option>
+              ${existingMessages.map(m => `
+                <option value="${m.messageId}" ${design.scoutMessageId === m.messageId ? 'selected' : ''}>
+                  ${this.escapeHtml(m.title)} (${m.status})
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">文面の作成状況</label>
+            <select id="design-msg-status" class="form-select" ${!canEdit ? 'disabled' : ''}>
+              <option value="未作成" ${design.scoutMessageStatus === '未作成' ? 'selected' : ''}>未作成</option>
+              <option value="作成中" ${(design.scoutMessageStatus || '作成中') === '作成中' ? 'selected' : ''}>作成中</option>
+              <option value="作成完了" ${design.scoutMessageStatus === '作成完了' ? 'selected' : ''}>作成完了 (即送信可能)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:20px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" style="font-weight:700;">スカウト件名</label>
+            <input type="text" id="design-msg-subject" class="form-control" value="${this.escapeHtml(design.scoutSubject || '')}" placeholder="例: 【〇〇経験者対象】自社プロダクト開発責任者ポジションのご案内" ${!canEdit ? 'disabled' : ''}>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" style="font-weight:700;">訴求ポイント・フック</label>
+            <input type="text" id="design-msg-appeal" class="form-control" value="${this.escapeHtml(design.scoutAppealPoints || '')}" placeholder="例: フルリモート可・ストックオプション付与・直下ポジション" ${!canEdit ? 'disabled' : ''}>
+          </div>
+        </div>
+
+        ${canEdit ? `
+          <div style="text-align:right; border-top:1px solid var(--border-light); padding-top:14px;">
+            <button id="btn-save-initial-design" class="btn btn-gold"><i data-lucide="check"></i> 初動設計を保存する</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  // 2. 初動チェックリストタブ
+  renderInitialActionChecklistTab(action, canEdit) {
+    const checklist = action.checklist || {};
+    const usersMap = new Map(StorageService.getUsers().map(u => [u.staffId, u.name]));
+
+    const renderStage = (stageKey, def) => {
+      return `
+        <div class="card" style="margin-bottom:16px;">
+          <h4 style="font-size:14px; font-weight:700; color:var(--color-navy-main); margin-bottom:10px; border-bottom:1px solid var(--border-light); padding-bottom:6px;">
+            <i data-lucide="check-circle" style="color:var(--color-gold-accent);"></i> ■ ${def.title}
+          </h4>
+          <div style="display:flex; flex-direction:column;">
+            ${def.items.map(item => {
+              const checkedData = checklist[item.id] || { done: false };
+              const isChecked = Boolean(checkedData.done);
+              const completedTimeStr = checkedData.completedAt ? new Date(checkedData.completedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+              const userName = checkedData.completedByStaffId ? (usersMap.get(checkedData.completedByStaffId) || checkedData.completedByStaffId) : '';
+
+              return `
+                <div class="checklist-item ${isChecked ? 'done' : ''}">
+                  <input type="checkbox" class="chk-action-item" data-item-id="${item.id}" ${isChecked ? 'checked' : ''} ${!canEdit ? 'disabled' : ''} style="cursor:pointer; width:16px; height:16px; margin-top:2px;">
+                  <div style="flex:1;">
+                    <span class="checklist-label" style="font-size:13px; font-weight:600;">${this.escapeHtml(item.text)}</span>
+                    ${isChecked ? `
+                      <span style="font-size:11px; color:#2F855A; margin-left:8px; background:#E6FFFA; padding:1px 6px; border-radius:3px;">
+                        ✓ 完了 (${completedTimeStr} ${this.escapeHtml(userName)})
+                      </span>
+                    ` : ''}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    };
+
+    return `
+      <div>
+        ${renderStage('stage1', INITIAL_CHECKLIST_DEFINITIONS.stage1)}
+        ${renderStage('stage2', INITIAL_CHECKLIST_DEFINITIONS.stage2)}
+        ${renderStage('stage3', INITIAL_CHECKLIST_DEFINITIONS.stage3)}
+      </div>
+    `;
+  }
+
+  // 3. スカウト実績・計画比較タブ
+  renderInitialActionComparisonTab(action, job, metrics) {
+    const design = action.design || {};
+    const mediaPlans = design.mediaPlans || [];
+    const targetReplyCount = Number(design.targetReplyCount || 2);
+    const expectedSentCount = Number(design.expectedSentCount || 100);
+    const expectedTotalReplyRate = Number(design.expectedTotalReplyRate || 2.0);
+    const expectedEffReplyRate = Number(design.expectedEffectiveReplyRate || 1.0);
+
+    const actualSentCount = Number(metrics.sentCount || 0);
+    const actualTotalReplyCount = Number(metrics.totalReplyCount || 0);
+    const actualEffReplyCount = Number(metrics.effectiveReplyCount || 0);
+    const actualMediaCount = Number(metrics.usedMediaCount || 0);
+
+    const sentRateAchieved = expectedSentCount > 0 ? Math.round((actualSentCount / expectedSentCount) * 100) : 0;
+    const isZeroReply = actualSentCount > 0 && actualTotalReplyCount === 0;
+
+    return `
+      <div class="card" style="padding:18px 22px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; border-bottom:1px solid var(--border-light); padding-bottom:8px;">
+          <div>
+            <h4 style="font-size:15px; font-weight:700; color:var(--color-navy-main); margin:0;">
+              <i data-lucide="bar-chart-2" style="color:var(--color-gold-accent);"></i> ■ 計画と実績の対比検証
+            </h4>
+            <div style="font-size:12px; color:var(--text-secondary); margin-top:3px;">
+              ※「本日の実績入力」画面で登録されたスカウト実績から自動連動・集計されています (集計開始: ${action.acquisitionDate || '求人獲得日'})
+            </div>
+          </div>
+          <div style="font-size:12px; background:#F8FAFC; padding:4px 12px; border-radius:4px; border:1px solid #E2E8F0;">
+            初回送信日: <strong>${metrics.firstSentDate || '未送信'}</strong> ｜ 最終送信日: <strong>${metrics.lastSentDate || '未送信'}</strong>
+          </div>
+        </div>
+
+        ${actualSentCount === 0 ? `
+          <div class="notice-box" style="margin-bottom:16px; background:#F8FAFC; border-color:#CBD5E0; color:#4A5568;">
+            <i data-lucide="info"></i>
+            <span>この求人のスカウト実績はまだ登録されていません。「本日の実績入力」画面で送信数が入力されると自動反映されます。</span>
+          </div>
+        ` : ''}
+
+        ${isZeroReply ? `
+          <div class="notice-box" style="margin-bottom:16px; background:#FFF5F5; border-color:#FEB2B2; color:#C53030; font-weight:600;">
+            <i data-lucide="alert-triangle"></i>
+            <span>返信が0件です。ターゲット・文面・媒体・検索条件を確認し、次のアクションを設定してください。</span>
+          </div>
+        ` : ''}
+
+        <!-- 計画対比テーブル -->
+        <div style="overflow-x:auto; margin-bottom:20px;">
+          <table class="data-table" style="font-size:12.5px;">
+            <thead>
+              <tr>
+                <th style="min-width:140px; background:var(--color-navy-main); color:#FFF;">指標項目</th>
+                <th style="text-align:right; min-width:110px;">初動計画 (目標)</th>
+                <th style="text-align:right; min-width:110px;">現在の実績</th>
+                <th style="text-align:center; min-width:120px;">達成度・判定</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>実施媒体数</strong></td>
+                <td style="text-align:right;">${mediaPlans.length > 0 ? mediaPlans.length : 2} 媒体</td>
+                <td style="text-align:right; font-weight:700;">${actualMediaCount} 媒体</td>
+                <td style="text-align:center;">
+                  ${actualMediaCount >= 2 ? '<span class="badge badge-success">達成</span>' : '<span class="badge badge-warning">2媒体未満 (要追加)</span>'}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>初回スカウト送信数</strong></td>
+                <td style="text-align:right;">${expectedSentCount} 通</td>
+                <td style="text-align:right; font-weight:700;">${actualSentCount} 通</td>
+                <td style="text-align:center;">
+                  <strong style="${sentRateAchieved >= 100 ? 'color:#2F855A;' : 'color:#DD6B20;'}">${sentRateAchieved}%</strong>
+                  ${actualSentCount >= expectedSentCount ? '<span class="badge badge-success" style="margin-left:4px;">達成</span>' : '<span class="badge badge-gray" style="margin-left:4px;">進行中</span>'}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>総返信数</strong></td>
+                <td style="text-align:right;">${targetReplyCount} 件</td>
+                <td style="text-align:right; font-weight:700;">${actualTotalReplyCount} 件</td>
+                <td style="text-align:center;">
+                  ${actualTotalReplyCount >= targetReplyCount ? '<span class="badge badge-success">達成</span>' : actualTotalReplyCount > 0 ? '<span class="badge badge-gold">一部返信</span>' : '<span class="badge badge-danger">未達 (0件)</span>'}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>有効返信数</strong></td>
+                <td style="text-align:right;">1 件以上</td>
+                <td style="text-align:right; font-weight:700; color:var(--color-gold-accent);">${actualEffReplyCount} 件</td>
+                <td style="text-align:center;">
+                  ${actualEffReplyCount >= 1 ? '<span class="badge badge-success">有効返信あり</span>' : '<span class="badge badge-gray">有効未達</span>'}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>総返信率</strong></td>
+                <td style="text-align:right;">${expectedTotalReplyRate.toFixed(1)}%</td>
+                <td style="text-align:right; font-weight:700;">${metrics.totalReplyRateFormatted}</td>
+                <td style="text-align:center;">
+                  ${metrics.totalReplyRate !== null && metrics.totalReplyRate >= expectedTotalReplyRate ? '<span class="badge badge-success">想定以上</span>' : actualSentCount > 0 ? '<span class="badge badge-warning">要検証</span>' : '-'}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>有効返信率</strong></td>
+                <td style="text-align:right;">${expectedEffReplyRate.toFixed(1)}%</td>
+                <td style="text-align:right; font-weight:700; color:var(--color-gold-accent);">${metrics.effectiveReplyRateFormatted}</td>
+                <td style="text-align:center;">
+                  ${metrics.effectiveReplyRate !== null && metrics.effectiveReplyRate >= expectedEffReplyRate ? '<span class="badge badge-success">想定以上</span>' : actualSentCount > 0 ? '<span class="badge badge-warning">要検証</span>' : '-'}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 媒体別実績テーブル -->
+        <h4 style="font-size:14px; font-weight:700; color:var(--color-navy-main); margin-bottom:10px;">
+          <i data-lucide="layers" style="color:var(--color-gold-accent);"></i> ■ 送信実績のある媒体別内訳
+        </h4>
+        <div style="overflow-x:auto;">
+          <table class="data-table" style="font-size:12px;">
+            <thead>
+              <tr>
+                <th>媒体名</th>
+                <th style="text-align:right;">送信数</th>
+                <th style="text-align:right;">総返信数</th>
+                <th style="text-align:right;">有効返信数</th>
+                <th style="text-align:right;">有効返信率</th>
+                <th style="text-align:right;">構成比</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${metrics.usedMediaList.length === 0 ? `
+                <tr><td colspan="6" style="text-align:center; padding:16px; color:var(--text-muted);">媒体別の送信実績はまだありません</td></tr>
+              ` : metrics.usedMediaList.map(m => `
+                <tr>
+                  <td><strong style="color:var(--color-navy-main);">${this.escapeHtml(m.name)}</strong></td>
+                  <td style="text-align:right; font-weight:700;">${m.sentCount}通</td>
+                  <td style="text-align:right;">${m.totalReplyCount}件</td>
+                  <td style="text-align:right; font-weight:700; color:var(--color-gold-accent);">${m.effectiveReplyCount}件</td>
+                  <td style="text-align:right; font-weight:700;">${m.effectiveReplyRateFormatted}</td>
+                  <td style="text-align:right; color:var(--text-secondary);">${m.share}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  // 4. 2営業日後レビュー & 候補者 & 次のアクションタブ
+  renderInitialActionReviewTab(action, job, metrics, canEdit) {
+    const review = action.review || {};
+    const execStatus = review.executionStatus || {};
+    const vItems = review.verificationItems || {};
+    const candidates = action.representativeCandidates || [];
+    const nextActions = action.nextActions || [];
+    const users = StorageService.getActiveUsers();
+    const mediaList = StorageService.getActiveMediaList();
+
+    return `
+      <div class="card" style="padding:18px 22px;">
+        <!-- ヘッダー自動サマリー -->
+        <div style="background:#FAF8F5; border:1px solid #E6D5B8; padding:12px 16px; border-radius:6px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <h4 style="font-size:14px; font-weight:700; color:var(--color-navy-main); margin:0;">
+              <i data-lucide="clipboard-check" style="color:var(--color-gold-accent);"></i> 2営業日後レビュー検証シート
+            </h4>
+            <div style="font-size:12px; color:var(--text-secondary); margin-top:2px;">
+              初動期限: <strong>${action.deadlineDate || '-'}</strong> ｜ 現在の送信: <strong>${metrics.sentCount}通</strong> (目標: ${action.design?.expectedSentCount || 100}通) ｜ 総返信: <strong>${metrics.totalReplyCount}件</strong>
+            </div>
+          </div>
+          <div style="font-size:12px;">
+            最終レビュー実施: <strong>${review.reviewedAt ? review.reviewedAt.slice(0, 16) : '未完了'}</strong>
+          </div>
+        </div>
+
+        <!-- ■ 実行状況 -->
+        <h4 style="font-size:14px; font-weight:700; color:var(--color-navy-main); margin-bottom:12px; border-bottom:1px solid var(--border-light); padding-bottom:6px;">
+          ■ 1. スカウト実行状況の確認
+        </h4>
+
+        <div style="margin-bottom:14px;">
+          <label class="form-label" style="font-weight:700;">計画した行動（媒体選定・送信数）を実施できたか？</label>
+          <div style="display:flex; gap:16px; font-size:13px; margin-top:4px;">
+            <label style="cursor:pointer;"><input type="radio" name="exec-planned" value="yes" ${execStatus.isExecutedAsPlanned === 'yes' ? 'checked' : ''} ${!canEdit ? 'disabled' : ''}> 計画通り実施できた</label>
+            <label style="cursor:pointer;"><input type="radio" name="exec-planned" value="partial" ${execStatus.isExecutedAsPlanned === 'partial' ? 'checked' : ''} ${!canEdit ? 'disabled' : ''}> 一部未実施・遅延あり</label>
+            <label style="cursor:pointer;"><input type="radio" name="exec-planned" value="no" ${execStatus.isExecutedAsPlanned === 'no' ? 'checked' : ''} ${!canEdit ? 'disabled' : ''}> 実施できなかった</label>
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <label class="form-label">未実施・遅延がある場合の理由</label>
+          <input type="text" id="review-unexec-reason" class="form-control" value="${this.escapeHtml(execStatus.unexecutedReason || '')}" placeholder="例: ターゲット該当母集団が想定より少なく検索条件を再調整したため..." ${!canEdit ? 'disabled' : ''}>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:20px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" style="font-weight:700;">当初の想定通りだった点</label>
+            <textarea id="review-as-expected" class="form-control" rows="2" placeholder="例: 若手層の開封率は良好、スキルマッチ度は高い..." ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(execStatus.asExpectedNotes || '')}</textarea>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label" style="font-weight:700;">当初の想定と異なった点</label>
+            <textarea id="review-unexpected" class="form-control" rows="2" placeholder="例: 提示年収に対する反応が鈍い、地方在住者からの反応が多い..." ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(execStatus.unexpectedNotes || '')}</textarea>
+          </div>
+        </div>
+
+        <!-- ■ 検証7項目 -->
+        <h4 style="font-size:14px; font-weight:700; color:var(--color-navy-main); margin-bottom:12px; border-bottom:1px solid var(--border-light); padding-bottom:6px;">
+          ■ 2. 検証項目チェック (7項目)
+        </h4>
+
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:24px;">
+          ${REVIEW_VERIFICATION_ITEMS.map(item => {
+            const curVal = vItems[item.id] || '問題なし';
+            const curComment = vItems[`${item.id}Comment`] || '';
+
+            return `
+              <div style="background:#F8FAFC; border:1px solid #E2E8F0; padding:10px 14px; border-radius:6px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+                  <span style="font-weight:700; font-size:13px; color:var(--color-navy-main);">${item.label}</span>
+                  <div style="display:flex; gap:12px; font-size:12px;">
+                    ${VERIFICATION_OPTIONS.map(opt => `
+                      <label style="cursor:pointer; display:inline-flex; align-items:center; gap:3px;">
+                        <input type="radio" name="vitem_${item.id}" value="${opt}" ${curVal === opt ? 'checked' : ''} ${!canEdit ? 'disabled' : ''}>
+                        <span style="${opt === '要変更' ? 'color:#E53E3E; font-weight:700;' : opt === '要確認' ? 'color:#DD6B20; font-weight:700;' : ''}">${opt}</span>
+                      </label>
+                    `).join('')}
+                  </div>
+                </div>
+                <input type="text" class="form-control vitem-comment" data-item-id="${item.id}" value="${this.escapeHtml(curComment)}" placeholder="所感・理由・確認メモ..." style="font-size:12px; height:28px;" ${!canEdit ? 'disabled' : ''}>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <!-- ■ 代表候補者の登録 (2〜3名) -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid var(--border-light); padding-bottom:6px;">
+          <h4 style="font-size:14px; font-weight:700; color:var(--color-navy-main); margin:0;">
+            <i data-lucide="user-check" style="color:var(--color-gold-accent);"></i> ■ 3. 代表候補者の登録 (当初決定イメージに近い方 2〜3名)
+          </h4>
+          ${canEdit ? `
+            <button id="btn-add-candidate-card" class="btn btn-secondary btn-sm"><i data-lucide="plus"></i> ＋ 候補者を追加</button>
+          ` : ''}
+        </div>
+
+        <div id="candidates-container" style="margin-bottom:24px;">
+          ${candidates.length === 0 ? `
+            <div style="padding:16px; text-align:center; background:#F8FAFC; border:1px dashed #CBD5E0; border-radius:6px; color:var(--text-muted); font-size:12px;">
+              代表候補者がまだ登録されていません。「＋ 候補者を追加」からスカウト送付済みの候補者（2〜3名）を登録してください。
+            </div>
+          ` : candidates.map((cand, idx) => `
+            <div class="candidate-card" data-index="${idx}">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-weight:700; font-size:13px; color:var(--color-navy-main);">代表候補者 #${idx + 1}</span>
+                ${canEdit ? `<button class="btn btn-secondary btn-sm btn-remove-candidate" style="color:#E53E3E; padding:2px 6px;">&times; 削除</button>` : ''}
+              </div>
+              <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; margin-bottom:8px;">
+                <input type="text" class="form-control cand-name" value="${this.escapeHtml(cand.candidateName || '')}" placeholder="候補者名 / 媒体管理名" style="font-size:12px;" ${!canEdit ? 'disabled' : ''}>
+                <select class="form-select cand-media" style="font-size:12px;" ${!canEdit ? 'disabled' : ''}>
+                  ${mediaList.map(m => `<option value="${m.id}" ${cand.mediaId === m.id ? 'selected' : ''}>${this.escapeHtml(m.name)}</option>`).join('')}
+                </select>
+                <input type="text" class="form-control cand-current-company" value="${this.escapeHtml(cand.currentCompany || '')}" placeholder="現勤務先" style="font-size:12px;" ${!canEdit ? 'disabled' : ''}>
+                <input type="text" class="form-control cand-position" value="${this.escapeHtml(cand.position || '')}" placeholder="現職種" style="font-size:12px;" ${!canEdit ? 'disabled' : ''}>
+              </div>
+              <div style="display:grid; grid-template-columns: 80px 100px 1fr; gap:8px; margin-bottom:8px;">
+                <input type="text" class="form-control cand-age" value="${this.escapeHtml(cand.age || '')}" placeholder="年齢" style="font-size:12px;" ${!canEdit ? 'disabled' : ''}>
+                <input type="text" class="form-control cand-salary" value="${this.escapeHtml(cand.salary || '')}" placeholder="年収" style="font-size:12px;" ${!canEdit ? 'disabled' : ''}>
+                <input type="text" class="form-control cand-url" value="${this.escapeHtml(cand.candidateUrl || '')}" placeholder="媒体候補者URL" style="font-size:12px;" ${!canEdit ? 'disabled' : ''}>
+              </div>
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                <textarea class="form-control cand-match" rows="2" placeholder="マッチポイント..." style="font-size:12px;" ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(cand.matchPoints || '')}</textarea>
+                <textarea class="form-control cand-concern" rows="2" placeholder="懸念ポイント..." style="font-size:12px;" ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(cand.concernPoints || '')}</textarea>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <!-- ■ 次のアクション設定 -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid var(--border-light); padding-bottom:6px;">
+          <div>
+            <h4 style="font-size:14px; font-weight:700; color:var(--color-navy-main); margin:0;">
+              <i data-lucide="arrow-right-circle" style="color:var(--color-gold-accent);"></i> ■ 4. 次のアクション設定 (複数選択可)
+            </h4>
+            <div style="font-size:11.5px; color:var(--text-secondary); margin-top:2px;">
+              ※レビューに基づく具体的な改善アクション・担当者・期限を設定します。
+            </div>
+          </div>
+          ${canEdit ? `
+            <button id="btn-add-next-action-row" class="btn btn-secondary btn-sm"><i data-lucide="plus"></i> ＋ アクションを追加</button>
+          ` : ''}
+        </div>
+
+        <div id="next-actions-container" style="margin-bottom:20px;">
+          ${nextActions.length === 0 ? `
+            <div style="padding:14px; text-align:center; background:#FFF5F5; border:1px solid #FEB2B2; border-radius:6px; color:#C53030; font-size:12px;">
+              次のアクションが設定されていません。初動検証後のアクションを1件以上登録してください。
+            </div>
+          ` : nextActions.map((na, idx) => `
+            <div class="next-action-row ${na.completed ? 'completed' : ''}" data-index="${idx}">
+              <div style="display:flex; align-items:center; gap:8px; width:220px;">
+                <input type="checkbox" class="na-completed-chk" ${na.completed ? 'checked' : ''} ${!canEdit ? 'disabled' : ''} title="完了にする">
+                <select class="form-select na-type-select" style="font-size:12px; height:30px;" ${!canEdit ? 'disabled' : ''}>
+                  ${NEXT_ACTION_TYPES.map(t => `<option value="${t}" ${na.actionType === t ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+              </div>
+              <div style="flex:1;">
+                <input type="text" class="form-control na-content-inp" value="${this.escapeHtml(na.content || '')}" placeholder="具体的な対応内容..." style="font-size:12px; height:30px;" ${!canEdit ? 'disabled' : ''}>
+              </div>
+              <div style="width:120px;">
+                <select class="form-select na-staff-select" style="font-size:12px; height:30px;" ${!canEdit ? 'disabled' : ''}>
+                  ${users.map(u => `<option value="${u.staffId}" ${na.staffId === u.staffId ? 'selected' : ''}>${this.escapeHtml(u.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div style="width:125px;">
+                <input type="date" class="form-control na-deadline-inp" value="${na.deadline || ''}" style="font-size:12px; height:30px;" ${!canEdit ? 'disabled' : ''}>
+              </div>
+              ${canEdit ? `
+                <div>
+                  <button class="btn btn-secondary btn-sm btn-remove-na-row" style="color:#E53E3E; padding:3px 7px;">&times;</button>
+                </div>
+              ` : ''}
+            </div>
+          `).join('')}
+        </div>
+
+        ${canEdit ? `
+          <div style="text-align:right; border-top:1px solid var(--border-light); padding-top:14px; display:flex; justify-content:flex-end; gap:10px;">
+            <button id="btn-save-initial-review" class="btn btn-gold"><i data-lucide="check"></i> 2営業日後レビューを保存</button>
+            <button id="btn-jump-to-report-tab" class="btn btn-navy"><i data-lucide="mail"></i> 報告メール作成へ進む</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  // 5. 営業報告メールタブ
+  renderInitialActionReportTab(action, job, metrics, canEdit) {
+    const reportDraft = action.reportDraft || {};
+    const defaultSubject = reportDraft.subject || `【新規求人初動報告】${job.companyName}／${job.jobTitle}`;
+    const defaultBody = reportDraft.body || this.generateReportEmailDraft(action, job, metrics);
+    const reportsHistory = action.reports || [];
+    const usersMap = new Map(StorageService.getUsers().map(u => [u.staffId, u.name]));
+
+    return `
+      <div class="card" style="padding:18px 22px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px; border-bottom:1px solid var(--border-light); padding-bottom:8px;">
+          <div>
+            <h4 style="font-size:15px; font-weight:700; color:var(--color-navy-main); margin:0;">
+              <i data-lucide="mail" style="color:var(--color-gold-accent);"></i> ■ 営業への報告メール作成
+            </h4>
+            <div style="font-size:12px; color:var(--text-secondary); margin-top:3px;">
+              初動設計・実績・2営業日後レビュー・次のアクションを反映した下書きを自動生成します。内容を確認・編集してコピーしてください。
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            ${canEdit ? `
+              <button id="btn-regenerate-email-draft" class="btn btn-secondary btn-sm" title="現在の最新データから下書き本文を再作成します">
+                <i data-lucide="refresh-cw"></i> 下書き再生成
+              </button>
+            ` : ''}
+          </div>
+        </div>
+
+        <!-- 件名 -->
+        <div class="form-group" style="margin-bottom:12px;">
+          <label class="form-label" style="font-weight:700;">メール件名</label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="report-email-subject" class="form-control" value="${this.escapeHtml(defaultSubject)}" style="font-weight:700; font-size:13px;" ${!canEdit ? 'disabled' : ''}>
+            <button id="btn-copy-subject" class="btn btn-secondary btn-sm" style="white-space:nowrap;"><i data-lucide="copy"></i> 件名のみコピー</button>
+          </div>
+        </div>
+
+        <!-- 本文 -->
+        <div class="form-group" style="margin-bottom:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="form-label" style="font-weight:700; margin:0;">メール本文 (下書き)</label>
+            <div style="display:flex; gap:8px;">
+              <button id="btn-copy-body" class="btn btn-secondary btn-sm"><i data-lucide="copy"></i> 本文のみコピー</button>
+              <button id="btn-copy-all" class="btn btn-navy btn-sm"><i data-lucide="clipboard"></i> 全文コピー (件名＋本文)</button>
+            </div>
+          </div>
+          <textarea id="report-email-body" class="form-control" rows="18" style="font-family:monospace, sans-serif; font-size:12.5px; line-height:1.6;" ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(defaultBody)}</textarea>
+        </div>
+
+        <!-- 下書き保存 & 報告済みボタン -->
+        ${canEdit ? `
+          <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-light); padding-top:14px; margin-bottom:20px;">
+            <button id="btn-save-report-draft" class="btn btn-secondary"><i data-lucide="save"></i> 下書き保存</button>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:12px; color:var(--text-secondary);">※コピー後に営業へ送信完了したら押下してください</span>
+              <button id="btn-mark-as-reported" class="btn btn-gold" style="font-weight:700;"><i data-lucide="check-circle-2"></i> 報告済みにする</button>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- 過去の報告履歴 -->
+        <h4 style="font-size:14px; font-weight:700; color:var(--color-navy-main); margin-bottom:10px; border-bottom:1px solid var(--border-light); padding-bottom:6px;">
+          <i data-lucide="history" style="color:var(--color-gold-accent);"></i> ■ 過去の報告履歴 (${reportsHistory.length}件)
+        </h4>
+
+        ${reportsHistory.length === 0 ? `
+          <div style="font-size:12px; color:var(--text-muted); padding:10px 0;">まだ報告履歴はありません</div>
+        ` : `
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            ${reportsHistory.slice().reverse().map((rep, idx) => `
+              <div style="background:#F8FAFC; border:1px solid #E2E8F0; padding:10px 14px; border-radius:6px; font-size:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                  <strong style="color:var(--color-navy-main);">${this.escapeHtml(rep.subject)}</strong>
+                  <span style="font-size:11px; color:var(--text-muted);">
+                    報告日時: ${new Date(rep.reportedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} ｜ 報告者: ${this.escapeHtml(usersMap.get(rep.reportedByStaffId) || rep.reportedByStaffId)}
+                  </span>
+                </div>
+                <div style="color:var(--text-secondary); font-size:11.5px; margin-bottom:4px;">
+                  報告先: <strong>${this.escapeHtml(rep.recipientName || '営業')}</strong> ｜ 送信数: ${rep.metricsSnapshot?.sentCount || 0}通 ｜ 有効返信: ${rep.metricsSnapshot?.effectiveReplyCount || 0}件 (${rep.metricsSnapshot?.effectiveReplyRateFormatted || '0%'})
+                </div>
+                <details style="margin-top:6px;">
+                  <summary style="cursor:pointer; color:var(--color-navy-main); font-weight:600;">報告本文を表示</summary>
+                  <pre style="background:#FFF; padding:10px; border:1px solid #EDF2F7; border-radius:4px; font-size:11px; white-space:pre-wrap; margin-top:6px;">${this.escapeHtml(rep.body)}</pre>
+                </details>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      </div>
+    `;
+  }
+
+  // 6. 初回MTG振り返りタブ
+  renderInitialActionMtgTab(action, job, metrics, canEdit) {
+    const firstMtg = action.firstMeetingReview || {};
+    const design = action.design || {};
+    const review = action.review || {};
+    const candidates = action.representativeCandidates || [];
+    const nextActions = action.nextActions || [];
+    const mediaMap = new Map(StorageService.getActiveMediaList().map(m => [m.id, m.name]));
+
+    return `
+      <div class="card" style="padding:18px 22px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; border-bottom:1px solid var(--border-light); padding-bottom:8px;">
+          <div>
+            <h4 style="font-size:15px; font-weight:700; color:var(--color-navy-main); margin:0;">
+              <i data-lucide="users" style="color:var(--color-gold-accent);"></i> ■ 初回MTGに向けた振り返り & 次週アクション
+            </h4>
+            <div style="font-size:12px; color:var(--text-secondary); margin-top:2px;">
+              初回MTG予定日: <strong>${action.firstMeetingDate || '未設定'}</strong> ｜ 初動結果を踏まえて営業・企業とすり合わせる内容を整理します。
+            </div>
+          </div>
+        </div>
+
+        <!-- これまでの初動実績・設計まとめサマリー (再入力不要) -->
+        <div style="background:#FAF8F5; border:1px solid #E6D5B8; padding:12px 16px; border-radius:6px; margin-bottom:18px; font-size:12.5px;">
+          <h5 style="font-weight:700; color:var(--color-navy-main); margin:0 0 8px 0;">【これまでの初動まとめ】</h5>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+            <div>
+              <div>・設定ターゲット: <strong>${this.escapeHtml(design.targetPersona || '未入力')}</strong></div>
+              <div>・送信計画: <strong>${design.expectedSentCount || 100}通</strong> ➔ 実績: <strong>${metrics.sentCount}通</strong></div>
+              <div>・返信結果: 総返信 <strong>${metrics.totalReplyCount}件</strong> ｜ 有効返信 <strong>${metrics.effectiveReplyCount}件</strong> (${metrics.effectiveReplyRateFormatted})</div>
+            </div>
+            <div>
+              <div>・実施媒体: <strong>${metrics.usedMediaList.map(m => m.name).join(', ') || 'なし'}</strong></div>
+              <div>・想定通りだった点: ${this.escapeHtml(review.executionStatus?.asExpectedNotes || '特になし')}</div>
+              <div>・想定と異なった点: ${this.escapeHtml(review.executionStatus?.unexpectedNotes || '特になし')}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 入力セクション -->
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label" style="font-weight:700;">1. 現在の懸念事項・課題</label>
+          <textarea id="mtg-concerns" class="form-control" rows="3" placeholder="例: ターゲット層の年収感と求人条件に乖離あり。地方からの応募意欲は高いが転居費用の相談が必要..." ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(firstMtg.concerns || '')}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label" style="font-weight:700;">2. 初回MTGで確認したい内容・相談事項</label>
+          <textarea id="mtg-checkpoints" class="form-control" rows="3" placeholder="例: ①必須要件の経験年数緩和が可能か ②リモートワーク頻度の調整余地 ③候補者Aさんの経歴マッチ度確認" ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(firstMtg.meetingCheckpoints || '')}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:20px;">
+          <label class="form-label" style="font-weight:700;">3. 次週のアクション案</label>
+          <textarea id="mtg-next-week-plans" class="form-control" rows="3" placeholder="例: MTG合意後に新規媒体（ミドル）を追加。条件緩和したターゲットに向けて新文面Bで50通送信予定" ${!canEdit ? 'disabled' : ''}>${this.escapeHtml(firstMtg.nextWeekActionPlans || '')}</textarea>
+        </div>
+
+        ${canEdit ? `
+          <div style="text-align:right; border-top:1px solid var(--border-light); padding-top:14px;">
+            <button id="btn-save-first-mtg-review" class="btn btn-gold"><i data-lucide="check"></i> 初回MTG振り返りを保存</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  // 報告メール下書き自動生成ロジック
+  generateReportEmailDraft(action, job, metrics) {
+    const usersMap = new Map(StorageService.getUsers().map(u => [u.staffId, u.name]));
+    const mediaMap = new Map(StorageService.getActiveMediaList().map(m => [m.id, m.name]));
+    const salesName = usersMap.get(action.salesStaffId) || '営業担当';
+    const consultantName = usersMap.get(action.consultantStaffId) || 'コンサルタント';
+    const design = action.design || {};
+    const review = action.review || {};
+    const mediaPlans = design.mediaPlans || [];
+    const candidates = action.representativeCandidates || [];
+    const nextActions = action.nextActions || [];
+
+    const todayStr = new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }).replace(/\//g, '-');
+    const periodStart = action.acquisitionDate || todayStr;
+
+    // 媒体別実績テキスト
+    let mediaStatsText = '';
+    if (metrics.usedMediaList && metrics.usedMediaList.length > 0) {
+      mediaStatsText = metrics.usedMediaList.map(m => `・${m.name}：送信${m.sentCount}通／総返信${m.totalReplyCount}件／有効返信${m.effectiveReplyCount}件 (有効返信率:${m.effectiveReplyRateFormatted})`).join('\n');
+    } else {
+      mediaStatsText = '・（指定期間の送信実績なし）';
+    }
+
+    // 検索条件テキスト
+    let searchCondText = '';
+    if (mediaPlans.length > 0) {
+      searchCondText = mediaPlans.map(mp => {
+        const mName = mediaMap.get(mp.mediaId) || mp.mediaId;
+        return `・${mName}：${mp.searchConditions || '指定条件なし'} (対象基準: ${mp.targetCriteria || '特になし'})`;
+      }).join('\n');
+    } else {
+      searchCondText = '・特になし';
+    }
+
+    // 候補者傾向テキスト
+    let candidatesText = '';
+    if (candidates.length > 0) {
+      candidatesText = candidates.map((c, i) => {
+        const mName = mediaMap.get(c.mediaId) || c.mediaId;
+        return `【候補者${i + 1}】${c.candidateName || '管理名未設定'} (${mName})
+・現職/職種：${c.currentCompany || '-'} / ${c.position || '-'} (${c.age || '-'}歳 / 年収${c.salary || '-'})
+・マッチポイント：${c.matchPoints || '-'}
+・懸念ポイント：${c.concernPoints || '-'}`;
+      }).join('\n\n');
+    } else {
+      candidatesText = '・（登録なし）';
+    }
+
+    // 考えられる原因
+    let causeText = '特になし';
+    if (metrics.sentCount > 0 && metrics.totalReplyCount === 0) {
+      causeText = '【返信0件要検証】現在送信に対する返信が得られておりません。ターゲット母集団・文面訴求・選定媒体のいずれかにズレが生じている可能性が高いため、次週に向けて条件緩和および媒体追加を検討しております。';
+    } else if (review.executionStatus?.unexpectedNotes) {
+      causeText = review.executionStatus.unexpectedNotes;
+    }
+
+    // 今後の対応案
+    let nextActionsText = '';
+    if (nextActions.length > 0) {
+      nextActionsText = nextActions.map(a => `・【${a.actionType}】${a.content || ''} (担当: ${usersMap.get(a.staffId) || a.staffId || '担当'} / 期限: ${a.deadline || '未定'})`).join('\n');
+    } else {
+      nextActionsText = '・現在の設定にて継続スカウト実施';
+    }
+
+    return `${salesName}さん
+
+お疲れさまです。
+下記求人の初動スカウト結果をご報告します。
+
+■対象求人
+${job.companyName}／${job.jobTitle}
+
+■集計期間
+${periodStart}～${todayStr}
+
+■当初の想定
+・目標返信数：${design.targetReplyCount !== undefined ? design.targetReplyCount : 2}件
+・想定返信率：${design.expectedTotalReplyRate !== undefined ? design.expectedTotalReplyRate : 2.0}%
+・想定送信数：${design.expectedSentCount !== undefined ? design.expectedSentCount : 100}通
+・設定ターゲット：${design.targetPersona || '未設定'}
+
+■実績
+・実施送信数：${metrics.sentCount}通
+・総返信数：${metrics.totalReplyCount}件
+・有効返信数：${metrics.effectiveReplyCount}件
+・総返信率：${metrics.totalReplyRateFormatted}
+・有効返信率：${metrics.effectiveReplyRateFormatted}
+・実施媒体：${metrics.usedMediaList.map(m => m.name).join('、') || 'なし'}
+
+■媒体別実績
+${mediaStatsText}
+
+■設定した検索条件
+${searchCondText}
+
+■候補者の傾向
+${candidatesText}
+
+■現時点での見立て
+・想定通りだった点：${review.executionStatus?.asExpectedNotes || '特になし'}
+・想定と異なった点：${review.executionStatus?.unexpectedNotes || '特になし'}
+・考えられる原因：${causeText}
+
+■今後の対応案
+${nextActionsText}
+
+■確認・相談事項
+${action.firstMeetingReview?.concerns || '・特になし'}
+
+ご確認をお願いいたします。
+担当コンサルタント：${consultantName}`;
+  }
+
+  // イベントバインド
+  bindInitialActionDetailEvents(container, action, canEdit) {
+    // 戻るボタン
+    container.querySelector('#btn-back-to-action-list')?.addEventListener('click', () => {
+      this.currentInitialActionJobId = null;
+      this.renderCurrentView();
+    });
+
+    // クイック報告メール作成
+    container.querySelector('#btn-quick-create-report')?.addEventListener('click', () => {
+      this.initialActionActiveTab = 'report';
+      this.renderCurrentView();
+    });
+
+    // ステップアイテムクリックでタブ切り替え
+    container.querySelectorAll('.step-wizard-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const targetTab = el.getAttribute('data-target-tab');
+        if (targetTab) {
+          this.initialActionActiveTab = targetTab;
+          this.renderCurrentView();
+        }
+      });
+    });
+
+    // タブ切り替え
+    container.querySelectorAll('.action-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.initialActionActiveTab = btn.getAttribute('data-tab');
+        this.renderCurrentView();
+      });
+    });
+
+    // ステータス即時変更
+    const stSelect = container.querySelector('#detail-action-status-select');
+    stSelect?.addEventListener('change', (e) => {
+      action.status = e.target.value;
+      action.statusManualOverride = true;
+      StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+      this.renderCurrentView();
+    });
+
+    container.querySelector('#btn-reset-status-auto')?.addEventListener('click', () => {
+      action.statusManualOverride = false;
+      StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+      this.renderCurrentView();
+    });
+
+    // 解除ボタン (管理者のみ)
+    container.querySelector('#btn-delete-initial-action')?.addEventListener('click', () => {
+      if (confirm(`初動管理「${action.companyName} / ${action.jobTitle}」の初動管理を解除しますか？`)) {
+        StorageService.deleteInitialAction(action.initialActionId, this.currentStaff ? this.currentStaff.staffId : '');
+        this.currentInitialActionJobId = null;
+        this.renderCurrentView();
+      }
+    });
+
+    // ==========================================
+    // Tab 1: 設計保存 & 媒体計画
+    // ==========================================
+    if (this.initialActionActiveTab === 'design' && canEdit) {
+      // 想定送信数の自動計算
+      const replyInp = container.querySelector('#design-target-reply');
+      const rateInp = container.querySelector('#design-expected-reply-rate');
+      const sentInp = container.querySelector('#design-expected-sent');
+      const updateExpectedSent = () => {
+        const reply = Number(replyInp.value) || 0;
+        const rate = Number(rateInp.value) || 0;
+        if (reply > 0 && rate > 0) {
+          const calc = Math.round(reply / (rate / 100));
+          if (!isNaN(calc) && isFinite(calc)) {
+            sentInp.value = calc;
+          }
+        }
+      };
+      replyInp?.addEventListener('input', updateExpectedSent);
+      rateInp?.addEventListener('input', updateExpectedSent);
+
+      // 媒体追加ボタン
+      container.querySelector('#btn-add-media-plan-row')?.addEventListener('click', () => {
+        const design = action.design || {};
+        if (!design.mediaPlans) design.mediaPlans = [];
+        design.mediaPlans.push({
+          mediaId: 'bizreach',
+          priority: design.mediaPlans.length + 1,
+          targetSentCount: 50,
+          searchConditions: '',
+          targetCriteria: '',
+          notes: ''
+        });
+        action.design = design;
+        StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+        this.renderCurrentView();
+      });
+
+      // 媒体行削除ボタン
+      container.querySelectorAll('.btn-remove-mp-row').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const row = btn.closest('.media-plan-row');
+          const idx = Number(row.getAttribute('data-index'));
+          action.design.mediaPlans.splice(idx, 1);
+          StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+          this.renderCurrentView();
+        });
+      });
+
+      // 設計保存ボタン
+      container.querySelector('#btn-save-initial-design')?.addEventListener('click', () => {
+        action.acquisitionDate = container.querySelector('#design-acq-date').value;
+        action.deadlineDate = container.querySelector('#design-deadline-date').value;
+        action.consultantStaffId = container.querySelector('#design-consultant-select').value;
+        action.salesStaffId = container.querySelector('#design-sales-select').value;
+        action.firstMeetingDate = container.querySelector('#design-first-mtg-date').value;
+        action.jobDifficulty = container.querySelector('#design-difficulty-select').value;
+        action.hiringCount = Number(container.querySelector('#design-hiring-count').value) || 1;
+
+        const mediaPlans = [];
+        container.querySelectorAll('.media-plan-row').forEach(row => {
+          mediaPlans.push({
+            mediaId: row.querySelector('.mp-media-id').value,
+            priority: Number(row.querySelector('.mp-priority').value) || 1,
+            targetSentCount: Number(row.querySelector('.mp-target-sent').value) || 0,
+            searchConditions: row.querySelector('.mp-search-cond').value,
+            targetCriteria: row.querySelector('.mp-target-crit').value
+          });
+        });
+
+        action.design = {
+          targetPersona: container.querySelector('#design-target-persona').value,
+          decisionPersona: container.querySelector('#design-decision-persona').value,
+          requiredExperience: container.querySelector('#design-required-exp').value,
+          preferredExperience: container.querySelector('#design-preferred-exp').value,
+          acceptableExperience: container.querySelector('#design-acceptable-exp').value,
+          targetAgeRange: container.querySelector('#design-target-age').value,
+          targetSalaryRange: container.querySelector('#design-target-salary').value,
+          workLocation: container.querySelector('#design-work-location').value,
+          jobChangeCount: container.querySelector('#design-job-change-count').value,
+          jobChangeReason: container.querySelector('#design-job-change-reason').value,
+          concerns: container.querySelector('#design-concerns').value,
+          targetReplyCount: Number(container.querySelector('#design-target-reply').value) || 2,
+          expectedTotalReplyRate: Number(container.querySelector('#design-expected-reply-rate').value) || 2.0,
+          expectedEffectiveReplyRate: Number(container.querySelector('#design-expected-eff-rate').value) || 1.0,
+          expectedSentCount: Number(container.querySelector('#design-expected-sent').value) || 100,
+          initialSentGoal: Number(container.querySelector('#design-initial-goal').value) || 100,
+          mediaPlans,
+          scoutMessageId: container.querySelector('#design-msg-select').value,
+          scoutMessageStatus: container.querySelector('#design-msg-status').value,
+          scoutSubject: container.querySelector('#design-msg-subject').value,
+          scoutAppealPoints: container.querySelector('#design-msg-appeal').value,
+          updatedAt: new Date().toISOString()
+        };
+
+        StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+        alert('初動設計を保存しました。');
+        this.renderCurrentView();
+      });
+    }
+
+    // ==========================================
+    // Tab 2: チェックリスト操作
+    // ==========================================
+    if (this.initialActionActiveTab === 'checklist' && canEdit) {
+      container.querySelectorAll('.chk-action-item').forEach(chk => {
+        chk.addEventListener('change', () => {
+          const itemId = chk.getAttribute('data-item-id');
+          if (!action.checklist) action.checklist = {};
+          action.checklist[itemId] = {
+            done: chk.checked,
+            completedAt: chk.checked ? new Date().toISOString() : null,
+            completedByStaffId: chk.checked && this.currentStaff ? this.currentStaff.staffId : null
+          };
+          StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+          this.renderCurrentView();
+        });
+      });
+    }
+
+    // ==========================================
+    // Tab 4: 2営業日後レビュー
+    // ==========================================
+    if (this.initialActionActiveTab === 'review' && canEdit) {
+      // 候補者追加
+      container.querySelector('#btn-add-candidate-card')?.addEventListener('click', () => {
+        if (!action.representativeCandidates) action.representativeCandidates = [];
+        action.representativeCandidates.push({
+          candidateName: '',
+          mediaId: 'bizreach',
+          candidateUrl: '',
+          currentCompany: '',
+          position: '',
+          age: '',
+          salary: '',
+          matchPoints: '',
+          concernPoints: '',
+          notes: ''
+        });
+        StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+        this.renderCurrentView();
+      });
+
+      // 候補者削除
+      container.querySelectorAll('.btn-remove-candidate').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const card = btn.closest('.candidate-card');
+          const idx = Number(card.getAttribute('data-index'));
+          action.representativeCandidates.splice(idx, 1);
+          StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+          this.renderCurrentView();
+        });
+      });
+
+      // 次のアクション追加
+      container.querySelector('#btn-add-next-action-row')?.addEventListener('click', () => {
+        if (!action.nextActions) action.nextActions = [];
+        action.nextActions.push({
+          actionId: `ACT-NEXT-${Date.now()}`,
+          actionType: NEXT_ACTION_TYPES[0],
+          content: '',
+          staffId: action.consultantStaffId || (this.currentStaff ? this.currentStaff.staffId : ''),
+          deadline: StorageService.calculateBusinessDaysLater(new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }).replace(/\//g, '-'), 3),
+          completed: false
+        });
+        StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+        this.renderCurrentView();
+      });
+
+      // 次のアクション削除
+      container.querySelectorAll('.btn-remove-na-row').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const row = btn.closest('.next-action-row');
+          const idx = Number(row.getAttribute('data-index'));
+          action.nextActions.splice(idx, 1);
+          StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+          this.renderCurrentView();
+        });
+      });
+
+      // 次のアクション完了チェック
+      container.querySelectorAll('.na-completed-chk').forEach(chk => {
+        chk.addEventListener('change', () => {
+          const row = chk.closest('.next-action-row');
+          const idx = Number(row.getAttribute('data-index'));
+          action.nextActions[idx].completed = chk.checked;
+          action.nextActions[idx].completedAt = chk.checked ? new Date().toISOString() : null;
+          StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+          this.renderCurrentView();
+        });
+      });
+
+      // レビュー保存処理
+      const saveReview = () => {
+        const execPlannedRadio = container.querySelector('input[name="exec-planned"]:checked');
+        const unexecReason = container.querySelector('#review-unexec-reason').value;
+        const asExpected = container.querySelector('#review-as-expected').value;
+        const unexpected = container.querySelector('#review-unexpected').value;
+
+        const vItems = {};
+        REVIEW_VERIFICATION_ITEMS.forEach(item => {
+          const rad = container.querySelector(`input[name="vitem_${item.id}"]:checked`);
+          vItems[item.id] = rad ? rad.value : '問題なし';
+          const comm = container.querySelector(`.vitem-comment[data-item-id="${item.id}"]`);
+          vItems[`${item.id}Comment`] = comm ? comm.value : '';
+        });
+
+        // 候補者の更新
+        const candidates = [];
+        container.querySelectorAll('.candidate-card').forEach(card => {
+          candidates.push({
+            candidateName: card.querySelector('.cand-name').value,
+            mediaId: card.querySelector('.cand-media').value,
+            currentCompany: card.querySelector('.cand-current-company').value,
+            position: card.querySelector('.cand-position').value,
+            age: card.querySelector('.cand-age').value,
+            salary: card.querySelector('.cand-salary').value,
+            candidateUrl: card.querySelector('.cand-url').value,
+            matchPoints: card.querySelector('.cand-match').value,
+            concernPoints: card.querySelector('.cand-concern').value
+          });
+        });
+
+        // 次のアクションの更新
+        const nextActions = [];
+        container.querySelectorAll('.next-action-row').forEach(row => {
+          const idx = Number(row.getAttribute('data-index'));
+          const original = action.nextActions[idx] || {};
+          nextActions.push({
+            ...original,
+            actionType: row.querySelector('.na-type-select').value,
+            content: row.querySelector('.na-content-inp').value,
+            staffId: row.querySelector('.na-staff-select').value,
+            deadline: row.querySelector('.na-deadline-inp').value,
+            completed: row.querySelector('.na-completed-chk').checked
+          });
+        });
+
+        action.review = {
+          reviewedAt: new Date().toISOString(),
+          reviewedByStaffId: this.currentStaff ? this.currentStaff.staffId : '',
+          executionStatus: {
+            isExecutedAsPlanned: execPlannedRadio ? execPlannedRadio.value : 'yes',
+            unexecutedReason: unexecReason,
+            asExpectedNotes: asExpected,
+            unexpectedNotes: unexpected
+          },
+          verificationItems: vItems
+        };
+        action.representativeCandidates = candidates;
+        action.nextActions = nextActions;
+
+        StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+      };
+
+      container.querySelector('#btn-save-initial-review')?.addEventListener('click', () => {
+        saveReview();
+        alert('2営業日後レビューを保存しました。');
+        this.renderCurrentView();
+      });
+
+      container.querySelector('#btn-jump-to-report-tab')?.addEventListener('click', () => {
+        saveReview();
+        this.initialActionActiveTab = 'report';
+        this.renderCurrentView();
+      });
+    }
+
+    // ==========================================
+    // Tab 5: 営業報告メール
+    // ==========================================
+    if (this.initialActionActiveTab === 'report') {
+      const subjectInp = container.querySelector('#report-email-subject');
+      const bodyTa = container.querySelector('#report-email-body');
+
+      container.querySelector('#btn-regenerate-email-draft')?.addEventListener('click', () => {
+        if (confirm('現在の最新データから報告メール本文を再生成しますか？（現在の編集内容は上書きされます）')) {
+          const metrics = this.calculateInitialActionMetrics(action);
+          const newDraft = this.generateReportEmailDraft(action, job, metrics);
+          bodyTa.value = newDraft;
+        }
+      });
+
+      container.querySelector('#btn-copy-subject')?.addEventListener('click', () => {
+        this.copyTextToClipboard(subjectInp.value, '件名をコピーしました');
+      });
+
+      container.querySelector('#btn-copy-body')?.addEventListener('click', () => {
+        this.copyTextToClipboard(bodyTa.value, '本文をコピーしました');
+      });
+
+      container.querySelector('#btn-copy-all')?.addEventListener('click', () => {
+        const full = `${subjectInp.value}\n\n${bodyTa.value}`;
+        this.copyTextToClipboard(full, '報告メールをコピーしました');
+      });
+
+      if (canEdit) {
+        container.querySelector('#btn-save-report-draft')?.addEventListener('click', () => {
+          action.reportDraft = {
+            subject: subjectInp.value,
+            body: bodyTa.value,
+            updatedAt: new Date().toISOString()
+          };
+          StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+          alert('報告メールの下書きを保存しました。');
+        });
+
+        container.querySelector('#btn-mark-as-reported')?.addEventListener('click', () => {
+          if (!confirm('営業への報告を「報告済み」として記録しますか？\n（現在の件名・本文・集計スナップショットが履歴に保存されます）')) {
+            return;
+          }
+
+          const metrics = this.calculateInitialActionMetrics(action);
+          const usersMap = new Map(StorageService.getUsers().map(u => [u.staffId, u.name]));
+          const salesName = usersMap.get(action.salesStaffId) || '営業担当';
+
+          if (!action.reports) action.reports = [];
+          const newReport = {
+            reportId: `REP-${Date.now()}`,
+            reportedAt: new Date().toISOString(),
+            reportedByStaffId: this.currentStaff ? this.currentStaff.staffId : '',
+            recipientName: salesName,
+            subject: subjectInp.value,
+            body: bodyTa.value,
+            metricsSnapshot: {
+              sentCount: metrics.sentCount,
+              totalReplyCount: metrics.totalReplyCount,
+              effectiveReplyCount: metrics.effectiveReplyCount,
+              totalReplyRateFormatted: metrics.totalReplyRateFormatted,
+              effectiveReplyRateFormatted: metrics.effectiveReplyRateFormatted,
+              usedMediaNames: metrics.usedMediaList.map(m => m.name).join(', ')
+            }
+          };
+
+          action.reports.push(newReport);
+          action.reportStatus = '報告済み';
+          action.lastReportedAt = newReport.reportedAt;
+          action.status = '報告済み';
+
+          StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+          alert('営業への初動報告を「報告済み」として記録しました。');
+          this.renderCurrentView();
+        });
+      }
+    }
+
+    // ==========================================
+    // Tab 6: 初回MTG振り返り
+    // ==========================================
+    if (this.initialActionActiveTab === 'mtg' && canEdit) {
+      container.querySelector('#btn-save-first-mtg-review')?.addEventListener('click', () => {
+        action.firstMeetingReview = {
+          concerns: container.querySelector('#mtg-concerns').value,
+          meetingCheckpoints: container.querySelector('#mtg-checkpoints').value,
+          nextWeekActionPlans: container.querySelector('#mtg-next-week-plans').value,
+          updatedAt: new Date().toISOString(),
+          updatedByStaffId: this.currentStaff ? this.currentStaff.staffId : ''
+        };
+        StorageService.saveInitialAction(action, this.currentStaff ? this.currentStaff.staffId : '');
+        alert('初回MTG振り返りを保存しました。');
+        this.renderCurrentView();
+      });
+    }
+  }
+
+  copyTextToClipboard(text, successMessage = 'クリップボードにコピーしました') {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        alert(successMessage);
+      }).catch(() => {
+        this.fallbackCopyText(text, successMessage);
+      });
+    } else {
+      this.fallbackCopyText(text, successMessage);
+    }
+  }
+
+  fallbackCopyText(text, successMessage) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      alert(successMessage);
+    } catch (e) {
+      alert('コピーに失敗しました。');
+    }
+    document.body.removeChild(ta);
+  }
+
+
   // 3. 求人マスタ画面 (Jobs - 企業単位の注力ランク・並び替え・絞り込み・検索)
   // =========================================================================
   renderJobsView(container) {
@@ -6094,6 +8538,9 @@ class AppController {
                     <td><div>${salariesHtml}</div></td>
                     <td style="text-align: center;">
                       <div style="display:flex; gap:4px; justify-content: center; flex-wrap:wrap;">
+                        <button class="btn btn-sm btn-job-initial-action" data-job-id="${j.jobId}" style="white-space:nowrap; background:#FAF6EE; color:var(--color-gold-hover); border:1px solid #E6D5B8;" title="新規求人初動管理を開く/開始する">
+                          <i data-lucide="rocket" style="width:12px;height:12px;"></i> 初動
+                        </button>
                         <button class="btn btn-secondary btn-sm btn-add-to-myjob" data-job-id="${j.jobId}" style="white-space:nowrap;">担当追加</button>
                         ${this.isAdminMode ? `
                           <button class="btn btn-secondary btn-sm btn-edit-job" data-job-id="${j.jobId}">編集</button>
@@ -6196,6 +8643,13 @@ class AppController {
         });
       });
     }
+
+    container.querySelectorAll('.btn-job-initial-action').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const jobId = btn.getAttribute('data-job-id');
+        this.openInitialActionForJob(jobId);
+      });
+    });
 
     container.querySelectorAll('.btn-add-to-myjob').forEach(btn => {
       btn.addEventListener('click', () => {

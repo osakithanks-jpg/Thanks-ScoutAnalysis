@@ -1078,3 +1078,229 @@ body {
   color: var(--text-secondary);
   margin-right: 6px;
 }
+
+/* =========================================================================
+   新規求人初動管理 (Initial Action) スタイル
+   ========================================================================= */
+
+.initial-action-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ステップウィザード */
+.step-wizard-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #FFFFFF;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 12px 18px;
+  overflow-x: auto;
+  gap: 8px;
+}
+
+.step-wizard-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.step-wizard-item:hover {
+  background-color: #F8FAFC;
+  color: var(--color-navy-main);
+}
+
+.step-wizard-item.active {
+  color: var(--color-gold-hover);
+  font-weight: 700;
+}
+
+.step-wizard-item.completed {
+  color: var(--color-navy-main);
+}
+
+.step-wizard-circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #EDF2F7;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  transition: all 0.2s;
+}
+
+.step-wizard-item.active .step-wizard-circle {
+  background: var(--color-gold-accent);
+  color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(197, 160, 89, 0.25);
+}
+
+.step-wizard-item.completed .step-wizard-circle {
+  background: var(--color-navy-main);
+  color: #FFFFFF;
+}
+
+.step-wizard-arrow {
+  color: #CBD5E0;
+  font-size: 13px;
+}
+
+/* タブナビゲーション */
+.action-tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid #E2E8F0;
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+
+.action-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.action-tab-btn:hover {
+  color: var(--color-navy-main);
+  background-color: #F7FAFC;
+}
+
+.action-tab-btn.active {
+  color: var(--color-navy-main);
+  border-bottom-color: var(--color-gold-accent);
+  background-color: #FFFFFF;
+}
+
+/* ステータスバッジ */
+.badge-status-init { background: #EDF2F7; color: #4A5568; }
+.badge-status-prep { background: #FEFCBF; color: #744210; }
+.badge-status-running { background: #BEE3F8; color: #2B6CB0; }
+.badge-status-review { background: #FEEBC8; color: #C05621; }
+.badge-status-report-wait { background: #E9D8FD; color: #6B46C1; }
+.badge-status-reported { background: #C6F6D5; color: #22543D; }
+.badge-status-extra { background: #EBF8FF; color: #2C5282; }
+.badge-status-mtg-wait { background: #FEFCBF; color: #975A16; }
+.badge-status-done { background: #38A169; color: #FFFFFF; }
+
+/* 期限警告バッジ */
+.badge-overdue {
+  background: #FFF5F5;
+  color: #E53E3E;
+  border: 1px solid #FEB2B2;
+  font-weight: 700;
+  animation: pulse-red 2s infinite;
+}
+
+.badge-due-today {
+  background: #FFFAF0;
+  color: #DD6B20;
+  border: 1px solid #FBD38D;
+  font-weight: 700;
+}
+
+@keyframes pulse-red {
+  0% { box-shadow: 0 0 0 0 rgba(229, 62, 62, 0.4); }
+  70% { box-shadow: 0 0 0 5px rgba(229, 62, 62, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(229, 62, 62, 0); }
+}
+
+/* チェックリストカード */
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.15s;
+  border-bottom: 1px solid #F0F4F8;
+}
+
+.checklist-item:last-child {
+  border-bottom: none;
+}
+
+.checklist-item:hover {
+  background-color: #F8FAFC;
+}
+
+.checklist-item.done {
+  background-color: #F0FFF4;
+}
+
+.checklist-item.done .checklist-label {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+/* メール下書きプレビュー */
+.email-preview-box {
+  background: #FAFAFA;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  padding: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #2D3748;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* 候補者カード */
+.candidate-card {
+  background: #FFFFFF;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  transition: box-shadow 0.2s;
+}
+
+.candidate-card:hover {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+/* アクション行 */
+.next-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.next-action-row.completed {
+  background: #F7FAFC;
+  opacity: 0.75;
+}
