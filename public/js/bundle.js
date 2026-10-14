@@ -7565,7 +7565,7 @@ class AppController {
             <i data-lucide="layers" style="color:var(--color-gold-accent);"></i> ■ 媒体計画 (原則2媒体以上の選定推奨)
           </h4>
           ${canEdit ? `
-            <button id="btn-add-media-plan-row" class="btn btn-secondary btn-sm"><i data-lucide="plus"></i> ＋ 媒体を追加</button>
+            <button id="btn-add-media-plan-row" class="btn btn-primary btn-sm" style="background-color: var(--color-navy-main);"><i data-lucide="plus"></i> 媒体を選択・追加</button>
           ` : ''}
         </div>
 
@@ -9977,102 +9977,343 @@ ${(action.nextActions || []).length > 0 ? (action.nextActions || []).map(a => `�
   }
 
   // 既存の基本情報、チェックリスト、スカウト進捗、2営業日レビューのイベント委譲
+  // 初動スカウト 媒体選択・追加モーダル
+  openAddMediaPlanModal(action, container) {
+    const allMedia = StorageService.getActiveMediaList();
+    if (!action.design) action.design = {};
+    if (!action.design.mediaPlans) action.design.mediaPlans = [];
+
+    const existingMap = new Map(action.design.mediaPlans.map(mp => [mp.mediaId, mp]));
+
+    const modalId = 'modal-select-media-plan';
+    let modal = document.getElementById(modalId);
+    if (modal) modal.remove();
+
+    modal = document.createElement('div');
+    modal.id = modalId;
+    modal.className = 'modal-overlay';
+    modal.style.position = 'fixed';
+    modal.style.top = '0';
+    modal.style.left = '0';
+    modal.style.width = '100%';
+    modal.style.height = '100%';
+    modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+    modal.style.display = 'flex';
+    modal.style.alignItems = 'center';
+    modal.style.justifyContent = 'center';
+    modal.style.zIndex = '9999';
+
+    modal.innerHTML = `
+      <div style="background: #FFFFFF; border-radius: 8px; width: 500px; max-width: 95%; max-height: 90vh; overflow-y: auto; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #EDF2F7; padding-bottom: 10px;">
+          <h3 style="font-size: 16px; font-weight: 700; color: #1A365D; margin: 0; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="layers" style="width: 18px; height: 18px; color: #C5A059;"></i>
+            初動スカウト利用媒体の選択・追加
+          </h3>
+          <button id="btn-close-media-modal" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #A0AEC0;">×</button>
+        </div>
+
+        <p style="font-size: 12px; color: #718096; margin-bottom: 16px;">
+          初動スカウトで利用する媒体にチェックを入れてください（<strong>原則2媒体以上の選定推奨</strong>）。
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+          ${allMedia.map(m => {
+            const isSelected = existingMap.has(m.id);
+            const currentPlan = existingMap.get(m.id) || {};
+            const sentGoal = currentPlan.targetSentCount || 50;
+
+            return `
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: ${isSelected ? '#F0FFF4' : '#F8FAFC'}; border: 1px solid ${isSelected ? '#9AE6B4' : '#E2E8F0'}; border-radius: 6px;">
+                <label style="display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700; color: #2D3748; cursor: pointer; flex: 1; margin: 0;">
+                  <input type="checkbox" class="cb-modal-media" data-media-id="${m.id}" data-media-name="${this.escapeHtml(m.name)}" ${isSelected ? 'checked' : ''} style="width: 16px; height: 16px;">
+                  <span>${this.escapeHtml(m.name)}</span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span style="font-size: 11px; color: #718096;">目標送信数:</span>
+                  <input type="number" class="form-control input-modal-media-goal" data-media-id="${m.id}" value="${sentGoal}" style="width: 75px; height: 30px; font-size: 12px; padding: 4px 6px;" min="1">
+                  <span style="font-size: 11px; color: #718096;">通</span>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #EDF2F7; padding-top: 14px;">
+          <button id="btn-cancel-media-modal" class="btn btn-secondary" style="font-size: 12px; padding: 6px 14px;">キャンセル</button>
+          <button id="btn-submit-media-modal" class="btn btn-primary" style="font-size: 12px; padding: 6px 18px; background-color: var(--color-navy-main);">選択した媒体を反映する</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+    if (window.lucide) window.lucide.createIcons();
+
+    const closeModal = () => modal.remove();
+    modal.querySelector('#btn-close-media-modal')?.addEventListener('click', closeModal);
+    modal.querySelector('#btn-cancel-media-modal')?.addEventListener('click', closeModal);
+
+    modal.querySelector('#btn-submit-media-modal')?.addEventListener('click', () => {
+      const selectedPlans = [];
+      let priority = 1;
+
+      modal.querySelectorAll('.cb-modal-media:checked').forEach(cb => {
+        const mediaId = cb.getAttribute('data-media-id');
+        const mediaName = cb.getAttribute('data-media-name');
+        const goalInput = modal.querySelector(`.input-modal-media-goal[data-media-id="${mediaId}"]`);
+        const sentGoal = Number(goalInput?.value) || 50;
+
+        const prev = existingMap.get(mediaId) || {};
+        selectedPlans.push({
+          mediaId,
+          mediaName,
+          priority: prev.priority || priority++,
+          targetSentCount: sentGoal,
+          searchConditions: prev.searchConditions || '',
+          targetCriteria: prev.targetCriteria || ''
+        });
+      });
+
+      action.design.mediaPlans = selectedPlans;
+      StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
+      closeModal();
+      this.renderInitialActionDetail(container);
+    });
+  }
+
   bindInitialActionLegacyEvents(container, action, canEdit) {
-    // 基本情報 & 初動設計タブの保存
-    const btnSaveDesign = container.querySelector('#btn-save-initial-design');
-    if (btnSaveDesign) {
-      btnSaveDesign.addEventListener('click', () => {
-        action.acquisitionDate = container.querySelector('#init-acquisition-date')?.value || action.acquisitionDate;
-        action.deadlineDate = container.querySelector('#init-deadline-date')?.value || action.deadlineDate;
-        action.firstMeetingDate = container.querySelector('#init-meeting-date')?.value || action.firstMeetingDate;
-        action.consultantStaffId = container.querySelector('#init-consultant-id')?.value || action.consultantStaffId;
-        action.salesStaffId = container.querySelector('#init-sales-id')?.value || action.salesStaffId;
-        action.jobDifficulty = container.querySelector('#init-difficulty')?.value || '通常';
-        action.hiringCount = Number(container.querySelector('#init-hiring-count')?.value) || 1;
-        action.notes = container.querySelector('#init-notes')?.value || '';
+    const syncCurrentDesignForm = () => {
+      if (!action.design) action.design = {};
+      action.acquisitionDate = container.querySelector('#design-acq-date')?.value || action.acquisitionDate;
+      action.deadlineDate = container.querySelector('#design-deadline-date')?.value || action.deadlineDate;
+      action.consultantStaffId = container.querySelector('#design-consultant-select')?.value || action.consultantStaffId;
+      action.salesStaffId = container.querySelector('#design-sales-select')?.value || action.salesStaffId;
+      action.firstMeetingDate = container.querySelector('#design-first-mtg-date')?.value || action.firstMeetingDate;
+      action.jobDifficulty = container.querySelector('#design-difficulty-select')?.value || '通常';
+      action.hiringCount = Number(container.querySelector('#design-hiring-count')?.value) || 1;
 
-        if (!action.design) action.design = {};
-        action.design.targetPersona = container.querySelector('#init-target-persona')?.value || '';
-        action.design.requiredExperience = container.querySelector('#init-required-exp')?.value || '';
-        action.design.targetAgeRange = container.querySelector('#init-target-age')?.value || '';
-        action.design.targetSalaryRange = container.querySelector('#init-target-salary')?.value || '';
-        action.design.workLocation = container.querySelector('#init-work-location')?.value || '';
-        action.design.targetReplyCount = Number(container.querySelector('#init-target-reply')?.value) || 2;
-        action.design.expectedSentCount = Number(container.querySelector('#init-expected-sent')?.value) || 100;
-        action.design.initialSentGoal = Number(container.querySelector('#init-sent-goal')?.value) || 100;
-        action.design.scoutSubject = container.querySelector('#init-scout-subject')?.value || '';
-        action.design.scoutAppealPoints = container.querySelector('#init-scout-appeal')?.value || '';
+      action.design.targetPersona = container.querySelector('#design-target-persona')?.value || '';
+      action.design.requiredExperience = container.querySelector('#design-req-exp')?.value || '';
+      action.design.preferredExperience = container.querySelector('#design-pref-exp')?.value || '';
+      action.design.acceptableExperience = container.querySelector('#design-acc-exp')?.value || '';
+      action.design.targetAgeRange = container.querySelector('#design-target-age')?.value || '';
+      action.design.targetSalaryRange = container.querySelector('#design-target-salary')?.value || '';
+      action.design.workLocation = container.querySelector('#design-work-location')?.value || '';
+      action.design.jobChangeCount = container.querySelector('#design-job-change-count')?.value || '';
+      action.design.jobChangeReason = container.querySelector('#design-job-change-reason')?.value || '';
+      action.design.decisionPersona = container.querySelector('#design-decision-persona')?.value || '';
+      action.design.concerns = container.querySelector('#design-concerns')?.value || '';
+      action.design.difficultyView = container.querySelector('#design-difficulty-view')?.value || '';
+      action.design.processImage = container.querySelector('#design-process-image')?.value || '';
 
-        // 媒体計画
-        const mediaPlans = [];
-        container.querySelectorAll('.media-plan-checkbox:checked').forEach(cb => {
-          const mediaId = cb.getAttribute('data-media-id');
-          const sentInput = container.querySelector(`.media-plan-sent[data-media-id="${mediaId}"]`);
+      action.design.targetReplyCount = Number(container.querySelector('#design-target-reply')?.value) || 2;
+      action.design.expectedTotalReplyRate = Number(container.querySelector('#design-exp-tot-reply-rate')?.value) || 2.0;
+      action.design.expectedEffectiveReplyRate = Number(container.querySelector('#design-exp-eff-reply-rate')?.value) || 1.0;
+      action.design.expectedSentCount = Number(container.querySelector('#design-exp-sent')?.value) || 100;
+      action.design.initialSentGoal = Number(container.querySelector('#design-initial-goal')?.value) || 100;
+
+      action.design.scoutMessageId = container.querySelector('#design-msg-select')?.value || '';
+      action.design.scoutMessageStatus = container.querySelector('#design-msg-status')?.value || '未作成';
+      action.design.scoutSubject = container.querySelector('#design-msg-subject')?.value || '';
+      action.design.scoutAppealPoints = container.querySelector('#design-msg-appeal')?.value || '';
+
+      // 媒体計画の同期
+      const mediaPlans = [];
+      const mediaList = StorageService.getActiveMediaList();
+      container.querySelectorAll('.media-plan-row').forEach(row => {
+        const mediaId = row.querySelector('.mp-media-id')?.value;
+        const priority = Number(row.querySelector('.mp-priority')?.value) || 1;
+        const targetSentCount = Number(row.querySelector('.mp-target-sent')?.value) || 50;
+        const searchConditions = row.querySelector('.mp-search-cond')?.value || '';
+        const targetCriteria = row.querySelector('.mp-target-crit')?.value || '';
+        const media = mediaList.find(m => m.id === mediaId);
+        if (mediaId) {
           mediaPlans.push({
             mediaId,
-            mediaName: cb.getAttribute('data-media-name') || mediaId,
-            sentGoal: Number(sentInput?.value) || 0
+            mediaName: media ? media.name : mediaId,
+            priority,
+            targetSentCount,
+            searchConditions,
+            targetCriteria
           });
-        });
-        action.design.mediaPlans = mediaPlans;
+        }
+      });
+      action.design.mediaPlans = mediaPlans;
+    };
 
-        StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
-        alert('基本情報および初動設計を保存しました。');
-        this.renderInitialActionDetail(container);
+    // 1. 媒体計画：「＋ 媒体を追加」ボタン (媒体選択モーダルを開く)
+    const btnAddMedia = container.querySelector('#btn-add-media-plan-row');
+    if (btnAddMedia) {
+      btnAddMedia.addEventListener('click', (e) => {
+        e.preventDefault();
+        syncCurrentDesignForm();
+        this.openAddMediaPlanModal(action, container);
       });
     }
 
-    // チェックリストの更新
-    container.querySelectorAll('.init-checklist-cb').forEach(cb => {
-      cb.addEventListener('change', (e) => {
-        if (!canEdit) return;
-        const itemId = e.target.getAttribute('data-item-id');
-        if (!action.checklist) action.checklist = {};
-        action.checklist[itemId] = {
-          checked: e.target.checked,
-          checkedAt: e.target.checked ? new Date().toISOString() : null,
-          checkedBy: this.currentStaff?.staffId || ''
-        };
-        StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
-        const itemEl = e.target.closest('.checklist-item');
-        if (itemEl) {
-          if (e.target.checked) itemEl.classList.add('done');
-          else itemEl.classList.remove('done');
+    // 2. 媒体計画：各行の「削除」ボタン
+    container.querySelectorAll('.btn-remove-mp-row').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        syncCurrentDesignForm();
+        const row = btn.closest('.media-plan-row');
+        const idx = Number(row?.getAttribute('data-index'));
+        if (!isNaN(idx) && action.design?.mediaPlans?.[idx]) {
+          action.design.mediaPlans.splice(idx, 1);
+          StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
+          this.renderInitialActionDetail(container);
         }
       });
     });
 
-    // 2営業日後レビューの保存
+    // 3. 初動設計の保存ボタン
+    const btnSaveDesign = container.querySelector('#btn-save-initial-design');
+    if (btnSaveDesign) {
+      btnSaveDesign.addEventListener('click', (e) => {
+        e.preventDefault();
+        syncCurrentDesignForm();
+        StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
+        alert('基本情報および初動設計を保存しました！');
+        this.renderInitialActionDetail(container);
+      });
+    }
+
+    // 4. チェックリストの更新
+    container.querySelectorAll('.chk-action-item').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        if (!canEdit) return;
+        const itemId = e.target.getAttribute('data-item-id');
+        if (!action.checklist) action.checklist = {};
+        const isChecked = e.target.checked;
+        const now = new Date().toISOString();
+
+        action.checklist[itemId] = {
+          done: isChecked,
+          completedAt: isChecked ? now : null,
+          completedByStaffId: isChecked ? (this.currentStaff?.staffId || '') : ''
+        };
+
+        StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
+        const itemEl = e.target.closest('.checklist-item');
+        if (itemEl) {
+          if (isChecked) {
+            itemEl.classList.add('done');
+          } else {
+            itemEl.classList.remove('done');
+          }
+        }
+      });
+    });
+
+    // 5. 2営業日後レビュー：候補者の追加
+    const btnAddCandidate = container.querySelector('#btn-add-candidate-card');
+    if (btnAddCandidate) {
+      btnAddCandidate.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (!action.representativeCandidates) action.representativeCandidates = [];
+        const mediaList = StorageService.getActiveMediaList();
+        action.representativeCandidates.push({
+          candidateId: `CAND_${Date.now()}`,
+          mediaId: mediaList[0]?.id || '',
+          mediaName: mediaList[0]?.name || '',
+          personaProfile: '',
+          replyReaction: '有効返信',
+          scoutAppealUsed: '',
+          notes: ''
+        });
+        StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
+        this.renderInitialActionDetail(container);
+      });
+    }
+
+    container.querySelectorAll('.btn-remove-candidate').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const idx = Number(btn.getAttribute('data-index'));
+        if (!isNaN(idx) && action.representativeCandidates?.[idx]) {
+          action.representativeCandidates.splice(idx, 1);
+          StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
+          this.renderInitialActionDetail(container);
+        }
+      });
+    });
+
+    // 6. 2営業日後レビュー：次アクションの追加
+    const btnAddNextAction = container.querySelector('#btn-add-next-action-row');
+    if (btnAddNextAction) {
+      btnAddNextAction.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (!action.nextActions) action.nextActions = [];
+        const users = StorageService.getActiveUsers();
+        action.nextActions.push({
+          id: `NA_${Date.now()}`,
+          type: '現在の対象で継続する',
+          detail: '',
+          assignee: this.currentStaff?.name || users[0]?.name || '',
+          deadline: action.deadlineDate || '',
+          completed: false
+        });
+        StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
+        this.renderInitialActionDetail(container);
+      });
+    }
+
+    container.querySelectorAll('.btn-remove-next-action').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const idx = Number(btn.getAttribute('data-index'));
+        if (!isNaN(idx) && action.nextActions?.[idx]) {
+          action.nextActions.splice(idx, 1);
+          StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
+          this.renderInitialActionDetail(container);
+        }
+      });
+    });
+
+    // 7. 2営業日後レビューの保存
     const btnSaveReview = container.querySelector('#btn-save-initial-review');
     if (btnSaveReview) {
-      btnSaveReview.addEventListener('click', () => {
+      btnSaveReview.addEventListener('click', (e) => {
+        e.preventDefault();
         const now = new Date().toISOString().replace('T', ' ').slice(0, 16);
         if (!action.review) action.review = {};
         action.review.reviewedAt = now;
         action.review.reviewedByStaffId = this.currentStaff?.staffId || '';
 
+        const plannedRadio = container.querySelector('input[name="exec-planned"]:checked');
         if (!action.review.executionStatus) action.review.executionStatus = {};
-        action.review.executionStatus.isExecutedAsPlanned = container.querySelector('#review-executed-planned')?.value || 'はい';
-        action.review.executionStatus.unexecutedReason = container.querySelector('#review-unexecuted-reason')?.value || '';
+        action.review.executionStatus.isExecutedAsPlanned = plannedRadio ? plannedRadio.value : 'yes';
+        action.review.executionStatus.unexecutedReason = container.querySelector('#review-unexec-reason')?.value || '';
         action.review.executionStatus.asExpectedNotes = container.querySelector('#review-as-expected')?.value || '';
         action.review.executionStatus.unexpectedNotes = container.querySelector('#review-unexpected')?.value || '';
 
+        // 検証項目
         if (!action.review.verificationItems) action.review.verificationItems = {};
-        action.review.verificationItems.targetAlignment = container.querySelector('#v-target-align')?.value || '問題なし';
-        action.review.verificationItems.messageAppropriateness = container.querySelector('#v-msg-appropriate')?.value || '問題なし';
-        action.review.verificationItems.mediaSelection = container.querySelector('#v-media-select')?.value || '問題なし';
-        action.review.verificationItems.searchConditions = container.querySelector('#v-search-cond')?.value || '問題なし';
-        action.review.verificationItems.candidateTargeting = container.querySelector('#v-cand-target')?.value || '問題なし';
-        action.review.verificationItems.jobConditionsConcern = container.querySelector('#v-job-cond')?.value || '問題なし';
-        action.review.verificationItems.scoutVolume = container.querySelector('#v-scout-vol')?.value || '問題なし';
+        const vKeys = ['targetAlignment', 'messageAppropriateness', 'mediaSelection', 'searchConditions', 'candidateTargeting', 'jobConditionsConcern', 'scoutVolume'];
+        vKeys.forEach(k => {
+          const sel = container.querySelector(`select[data-vitem="${k}"]`);
+          const note = container.querySelector(`input[data-vitem-note="${k}"]`);
+          if (sel) action.review.verificationItems[k] = sel.value;
+          if (note) action.review.verificationItems[`${k}Comment`] = note.value;
+        });
 
         StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
-        alert('2営業日後レビューを保存しました。');
+        alert('2営業日後レビューを保存しました！');
+        this.renderInitialActionDetail(container);
+      });
+    }
+
+    // 8. 「営業報告メール作成へ進む」ボタン
+    const btnJumpReport = container.querySelector('#btn-jump-to-report-tab');
+    if (btnJumpReport) {
+      btnJumpReport.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.initialActionActiveTab = 'report';
+        this.selectedReportTypeId = 'report_2d';
         this.renderInitialActionDetail(container);
       });
     }
   }
-
 
   copyTextToClipboard(text, successMessage = 'クリップボードにコピーしました') {
     if (navigator.clipboard && navigator.clipboard.writeText) {
