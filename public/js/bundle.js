@@ -2342,8 +2342,19 @@ class StorageService {
       }
     });
 
+    const totalReplyRate = (metrics.totalReplyRateRaw !== null && metrics.totalReplyRateRaw !== undefined)
+      ? Number(metrics.totalReplyRateRaw.toFixed(1))
+      : 0;
+    const effectiveReplyRate = (metrics.effectiveReplyRateRaw !== null && metrics.effectiveReplyRateRaw !== undefined)
+      ? Number(metrics.effectiveReplyRateRaw.toFixed(1))
+      : 0;
+
     return {
       ...metrics,
+      totalReplyRate,
+      effectiveReplyRate,
+      totalReplyRateFormatted: metrics.totalReplyRateFormatted || '－',
+      effectiveReplyRateFormatted: metrics.effectiveReplyRateFormatted || '－',
       results,
       mediaBreakdown,
       usedMediaList,
@@ -6312,26 +6323,38 @@ class AppController {
 
     const metrics = AnalyticsService.calculateMetrics(results);
     const mediaBreakdown = AnalyticsService.aggregateByMedia(results);
-    const usedMediaList = mediaBreakdown.filter(m => m.sentCount > 0);
+    const usedMediaList = mediaBreakdown.filter(m => (m.sentCount || 0) > 0);
 
     let firstSentDate = null;
     let lastSentDate = null;
     results.forEach(r => {
-      if (!firstSentDate || r.date < firstSentDate) firstSentDate = r.date;
-      if (!lastSentDate || r.date > lastSentDate) lastSentDate = r.date;
+      if ((Number(r.sentCount) || 0) > 0) {
+        if (!firstSentDate || r.date < firstSentDate) firstSentDate = r.date;
+        if (!lastSentDate || r.date > lastSentDate) lastSentDate = r.date;
+      }
     });
+
+    const totalReplyRate = (metrics.totalReplyRateRaw !== null && metrics.totalReplyRateRaw !== undefined)
+      ? Number(metrics.totalReplyRateRaw.toFixed(1))
+      : 0;
+    const effectiveReplyRate = (metrics.effectiveReplyRateRaw !== null && metrics.effectiveReplyRateRaw !== undefined)
+      ? Number(metrics.effectiveReplyRateRaw.toFixed(1))
+      : 0;
 
     return {
       ...metrics,
+      totalReplyRate,
+      effectiveReplyRate,
+      totalReplyRateFormatted: metrics.totalReplyRateFormatted || '－',
+      effectiveReplyRateFormatted: metrics.effectiveReplyRateFormatted || '－',
       results,
+      mediaBreakdown,
       usedMediaList,
       usedMediaCount: usedMediaList.length,
       firstSentDate,
       lastSentDate
     };
   }
-
-
 
   openInitialActionForJob(jobId) {
     const existing = StorageService.getInitialActionByJobId(jobId);
@@ -6912,8 +6935,8 @@ class AppController {
                         <strong>${m.sentCount}</strong> / ${m.totalReplyCount} / <strong style="color: #2B6CB0;">${m.effectiveReplyCount}</strong>
                       </td>
                       <td style="padding: 10px 8px; text-align: right; font-size: 11px; font-family: monospace;">
-                        <div>総: <strong>${m.totalReplyRate}%</strong></div>
-                        <div style="color: #2B6CB0;">有: <strong>${m.effectiveReplyRate}%</strong></div>
+                        <div>総: <strong>${m.totalReplyRateFormatted || (m.totalReplyRate !== undefined ? `${m.totalReplyRate}%` : '－')}</strong></div>
+                        <div style="color: #2B6CB0;">有: <strong>${m.effectiveReplyRateFormatted || (m.effectiveReplyRate !== undefined ? `${m.effectiveReplyRate}%` : '－')}</strong></div>
                       </td>
                       <td style="padding: 10px 8px; text-align: center;">
                         <span class="badge ${stBadge.className}" style="font-size: 10px; padding: 2px 6px; white-space: nowrap;">
@@ -7125,66 +7148,84 @@ class AppController {
 
 
   bindInitialActionListEvents(container) {
-    container.querySelector('#action-filter-search')?.addEventListener('input', (e) => {
-      this.initialActionSearchKeyword = e.target.value;
-      this.renderInitialActionList(container);
-    });
+    // 1. 初動管理を開始ボタン
+    const btnAdd = container.querySelector('#btn-add-initial-action');
+    if (btnAdd) {
+      btnAdd.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.openAddInitialActionModal();
+      });
+    }
 
-    container.querySelector('#action-filter-consultant')?.addEventListener('change', (e) => {
+    // 2. CSV出力ボタン
+    const btnExport = container.querySelector('#btn-export-initial-actions');
+    if (btnExport) {
+      btnExport.addEventListener('click', (e) => {
+        e.preventDefault();
+        StorageService.exportCSV('initial-actions', this.currentStaff?.staffId || '');
+      });
+    }
+
+    // 3. 担当コンサルフィルター
+    container.querySelector('#filter-initial-consultant')?.addEventListener('change', (e) => {
       this.initialActionFilterConsultant = e.target.value;
       this.renderInitialActionList(container);
     });
 
-    container.querySelector('#action-filter-sales')?.addEventListener('change', (e) => {
+    // 4. 担当営業フィルター
+    container.querySelector('#filter-initial-sales')?.addEventListener('change', (e) => {
       this.initialActionFilterSales = e.target.value;
       this.renderInitialActionList(container);
     });
 
-    container.querySelector('#action-filter-rank')?.addEventListener('change', (e) => {
+    // 5. 求人ランクフィルター
+    container.querySelector('#filter-initial-rank')?.addEventListener('change', (e) => {
       this.initialActionFilterRank = e.target.value;
       this.renderInitialActionList(container);
     });
 
-    container.querySelector('#action-filter-status')?.addEventListener('change', (e) => {
+    // 6. 初動ステータスフィルター
+    container.querySelector('#filter-initial-status')?.addEventListener('change', (e) => {
       this.initialActionFilterStatus = e.target.value;
       this.renderInitialActionList(container);
     });
 
-    container.querySelector('#action-filter-report')?.addEventListener('change', (e) => {
-      this.initialActionFilterReport = e.target.value;
+    // 7. 期限警告フィルター
+    container.querySelector('#filter-initial-overdue')?.addEventListener('change', (e) => {
+      this.initialActionFilterOverdue = e.target.value;
       this.renderInitialActionList(container);
     });
 
-    container.querySelector('#action-filter-overdue-chk')?.addEventListener('change', (e) => {
-      this.initialActionFilterOverdue = e.target.checked;
+    // 8. キーワード検索
+    container.querySelector('#filter-initial-search')?.addEventListener('input', (e) => {
+      this.initialActionSearchKeyword = e.target.value;
       this.renderInitialActionList(container);
     });
 
-    container.querySelector('#btn-reset-action-filter')?.addEventListener('click', () => {
-      this.initialActionSearchKeyword = '';
-      this.initialActionFilterConsultant = '';
-      this.initialActionFilterSales = '';
-      this.initialActionFilterRank = '';
-      this.initialActionFilterStatus = '';
-      this.initialActionFilterReport = '';
-      this.initialActionFilterOverdue = false;
-      this.renderInitialActionList(container);
+    // 9. 詳細ボタン (各行)
+    container.querySelectorAll('.btn-open-initial-detail').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const jobId = btn.getAttribute('data-job-id');
+        if (jobId) {
+          this.currentInitialActionJobId = jobId;
+          this.renderInitialActionDetail(container);
+        }
+      });
     });
 
-    container.querySelector('#btn-open-add-action-modal')?.addEventListener('click', () => {
-      this.openAddInitialActionModal();
-    });
-
-    container.querySelectorAll('.link-open-action-detail, .btn-action-detail-open').forEach(el => {
-      el.addEventListener('click', () => {
-        const jobId = el.getAttribute('data-job-id');
-        this.currentInitialActionJobId = jobId;
-        this.renderCurrentView();
+    // 10. 削除ボタン (各行)
+    container.querySelectorAll('.btn-delete-initial-action').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const actionId = btn.getAttribute('data-action-id');
+        if (confirm('この求人の初動管理データを削除しますか？\n（日々のスカウト実績データは削除されません）')) {
+          StorageService.deleteInitialAction(actionId, this.currentStaff?.staffId || '');
+          this.renderInitialActionList(container);
+        }
       });
     });
   }
-
-
 
   openAddInitialActionModal(preselectedJobId = '') {
     const allJobs = StorageService.getActiveJobs();
@@ -7194,8 +7235,12 @@ class AppController {
     const todayStr = new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }).replace(/\//g, '-');
     const defaultDeadline = StorageService.calculateBusinessDaysLater(todayStr, 2);
 
-    const mContainer = document.getElementById('modal-container');
-    if (!mContainer) return;
+    let mContainer = document.getElementById('modal-container');
+    if (!mContainer) {
+      mContainer = document.createElement('div');
+      mContainer.id = 'modal-container';
+      document.body.appendChild(mContainer);
+    }
 
     mContainer.innerHTML = `
       <div class="modal-overlay">
@@ -7214,11 +7259,15 @@ class AppController {
               <label class="form-label" style="font-weight:700;">対象求人 <span style="color:var(--color-danger);">*</span></label>
               <select id="modal-add-action-job" class="form-select">
                 <option value="">-- 対象求人を選択してください --</option>
-                ${targetJobs.map(j => `
-                  <option value="${j.jobId}" ${j.jobId === preselectedJobId ? 'selected' : ''}>
-                    ${this.escapeHtml(j.companyName)} ／ ${this.escapeHtml(j.jobTitle)} (${j.priorityRank})
-                  </option>
-                `).join('')}
+                ${targetJobs.map(j => {
+                  const title = j.title || j.jobTitle || '名称未設定';
+                  const rank = j.rank || j.priorityRank || '-';
+                  return `
+                    <option value="${j.jobId}" ${j.jobId === preselectedJobId ? 'selected' : ''}>
+                      ${this.escapeHtml(j.companyName || '（企業名未設定）')} ／ ${this.escapeHtml(title)} (${rank}ランク)
+                    </option>
+                  `;
+                }).join('')}
               </select>
             </div>
 
@@ -7321,8 +7370,8 @@ class AppController {
         jobId,
         companyId: job ? job.companyId : '',
         companyName: job ? job.companyName : '',
-        jobTitle: job ? job.jobTitle : '',
-        priorityRank: job ? job.priorityRank : 'UNSET',
+        jobTitle: job ? (job.title || job.jobTitle || '') : '',
+        priorityRank: job ? (job.rank || job.priorityRank || 'UNSET') : 'UNSET',
         acquisitionDate: acqDate,
         deadlineDate: deadline,
         firstMeetingDate,
@@ -7339,7 +7388,12 @@ class AppController {
         const saved = StorageService.saveInitialAction(newAction, this.currentStaff ? this.currentStaff.staffId : '');
         closeModal();
         this.currentInitialActionJobId = saved.jobId;
-        this.renderCurrentView();
+        const mainContainer = document.getElementById('main-view-container');
+        if (mainContainer) {
+          this.renderInitialActionDetail(mainContainer);
+        } else {
+          this.renderCurrentView();
+        }
       } catch (err) {
         alert(`登録エラー: ${err.message}`);
       }
@@ -7348,8 +7402,8 @@ class AppController {
     if (window.lucide) window.lucide.createIcons();
   }
 
-
   // =========================================================================
+// =========================================================================
   // 初動管理 詳細画面 (ステップバー・6大タブ・計画対比・レビュー・報告メール)
   // =========================================================================
 
