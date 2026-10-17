@@ -1356,7 +1356,9 @@ class StorageService {
         companyNameKana,
         priorityRank,
         priorityRankObj: PRIORITY_RANKS[priorityRank] || PRIORITY_RANKS.UNSET,
-        jobTitle: j.jobTitle || '',
+        jobTitle: j.jobTitle || j.title || '',
+        title: j.jobTitle || j.title || '',
+        rank: priorityRank,
         industry: j.industry || '',
         position: j.position || '',
         status: j.status || '準備中',
@@ -2109,6 +2111,14 @@ class StorageService {
   }
   static getActiveMediaList() {
     return this.getMediaList().filter(m => m.status === 'active');
+  }
+  static getMediaNameById(id) {
+    if (!id) return '';
+    const list = this.getMediaList();
+    const found = list.find(m => m.id === id);
+    if (found) return found.name;
+    const foundByName = list.find(m => m.name === id || m.id.toLowerCase() === String(id).toLowerCase());
+    return foundByName ? foundByName.name : id;
   }
 
   // --- スカウト実績 (Results) ---
@@ -3618,9 +3628,10 @@ class AnalyticsService {
     const mediaList = StorageService.getMediaList();
     const mediaStats = new Map(mediaList.map(m => [m.id, {
       mediaId: m.id,
+      mediaName: m.name,
       name: m.name,
       color: m.color || '#1A365D',
-      displayOrder: m.displayOrder,
+      displayOrder: m.displayOrder || m.order || 99,
       sentCount: 0,
       totalReplyCount: 0,
       effectiveReplyCount: 0
@@ -3629,7 +3640,8 @@ class AnalyticsService {
     filteredResults.forEach(r => {
       let stat = mediaStats.get(r.mediaId);
       if (!stat) {
-        stat = { mediaId: r.mediaId, name: r.mediaId, color: '#666', displayOrder: 99, sentCount: 0, totalReplyCount: 0, effectiveReplyCount: 0 };
+        const resolvedName = StorageService.getMediaNameById(r.mediaId) || r.mediaId || '未設定媒体';
+        stat = { mediaId: r.mediaId, mediaName: resolvedName, name: resolvedName, color: '#666', displayOrder: 99, sentCount: 0, totalReplyCount: 0, effectiveReplyCount: 0 };
         mediaStats.set(r.mediaId, stat);
       }
       stat.sentCount += Number(r.sentCount || 0);
@@ -3649,7 +3661,13 @@ class AnalyticsService {
           effectiveReplyCount: stat.effectiveReplyCount
         }]);
         const share = totalSentAllMedia > 0 ? ((stat.sentCount / totalSentAllMedia) * 100).toFixed(1) + '%' : '0%';
-        return { ...stat, ...metrics, share };
+        return {
+          ...stat,
+          ...metrics,
+          mediaName: stat.name || stat.mediaName || '未設定媒体',
+          name: stat.name || stat.mediaName || '未設定媒体',
+          share
+        };
       });
   }
 
@@ -6650,7 +6668,7 @@ class AppController {
     const today = new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }).replace(/\//g, '-');
 
     const actions = rawActions.map(a => {
-      const job = jobsMap.get(a.jobId) || { companyName: '（求人削除）', title: `求人ID:${a.jobId}`, rank: '-' };
+      const job = jobsMap.get(a.jobId) || { companyName: '（求人削除）', jobTitle: `求人ID:${a.jobId}`, title: `求人ID:${a.jobId}`, rank: '-' };
       const metrics = this.calculateInitialActionMetrics(a);
       const warnings = this.getInitialActionWarnings(a, metrics);
       const reports = a.reports || [];
@@ -6680,7 +6698,7 @@ class AppController {
     const filtered = actions.filter(item => {
       if (this.initialActionFilterConsultant && item.consultantStaffId !== this.initialActionFilterConsultant) return false;
       if (this.initialActionFilterSales && item.salesStaffId !== this.initialActionFilterSales) return false;
-      if (this.initialActionFilterRank && item.job.rank !== this.initialActionFilterRank) return false;
+      if (this.initialActionFilterRank && (item.job.rank !== this.initialActionFilterRank && item.job.priorityRank !== this.initialActionFilterRank)) return false;
       if (this.initialActionFilterStatus && item.status !== this.initialActionFilterStatus) return false;
       if (this.initialActionFilterReportStatus) {
         if (this.initialActionFilterReportStatus === '報告済み' && (!item.reports || item.reports.length === 0) && item.reportStatus !== '報告済み') return false;
@@ -6696,7 +6714,7 @@ class AppController {
       if (this.initialActionSearchKeyword) {
         const kw = this.initialActionSearchKeyword.toLowerCase();
         const comp = (item.job.companyName || '').toLowerCase();
-        const tit = (item.job.title || '').toLowerCase();
+        const tit = (item.job.jobTitle || item.job.title || '').toLowerCase();
         if (!comp.includes(kw) && !tit.includes(kw)) return false;
       }
       return true;
@@ -6881,7 +6899,7 @@ class AppController {
                           ${this.escapeHtml(item.job.companyName || '（企業名未設定）')}
                         </div>
                         <div style="color: #4A5568; font-size: 11px;">
-                          ${this.escapeHtml(item.job.title || '')}
+                          ${this.escapeHtml(item.job.jobTitle || item.job.title || '')}
                         </div>
                         ${item.warnings.length > 0 ? `
                           <div style="margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px;">
@@ -6985,7 +7003,7 @@ class AppController {
       return;
     }
 
-    const job = StorageService.getJobById(jobId) || { companyName: '（求人名不明）', title: `求人ID: ${jobId}`, rank: 'C' };
+    const job = StorageService.getJobById(jobId) || { companyName: '（求人名不明）', jobTitle: `求人ID: ${jobId}`, title: `求人ID: ${jobId}`, rank: 'C', priorityRank: 'C' };
     const metrics = this.calculateInitialActionMetrics(action);
     const warnings = this.getInitialActionWarnings(action, metrics);
     const usersMap = new Map(StorageService.getUsers().map(u => [u.staffId, u.name]));
@@ -7012,8 +7030,8 @@ class AppController {
                 <button class="btn btn-sm btn-secondary" id="btn-back-to-initial-list" style="padding: 3px 8px; font-size: 11px;">
                   <i data-lucide="arrow-left" style="width: 13px; height: 13px; margin-right: 2px;"></i>一覧へ戻る
                 </button>
-                <span class="rank-badge rank-${(job.rank || 'C').toLowerCase()}" style="font-size: 11px; padding: 2px 8px;">
-                  ${job.rank || '-'}ランク
+                <span class="rank-badge rank-${(job.priorityRank || job.rank || 'C').toLowerCase()}" style="font-size: 11px; padding: 2px 8px;">
+                  ${job.priorityRank || job.rank || '-'}ランク
                 </span>
                 <span class="badge ${stBadge.className}" style="font-size: 11px; padding: 3px 8px;">
                   ${stBadge.label}
@@ -7025,7 +7043,7 @@ class AppController {
                 ` : ''}
               </div>
               <h1 style="font-size: 20px; font-weight: 700; color: #1A365D; margin: 0 0 4px 0;">
-                ${this.escapeHtml(job.companyName || '')} <span style="font-weight: 400; color: #4A5568;">/ ${this.escapeHtml(job.title || '')}</span>
+                ${this.escapeHtml(job.companyName || '')} <span style="font-weight: 400; color: #4A5568;">/ ${this.escapeHtml(job.jobTitle || job.title || '')}</span>
               </h1>
               <div style="display: flex; gap: 16px; font-size: 12px; color: #718096; flex-wrap: wrap;">
                 <span>獲得日: <strong style="color: #2D3748;">${action.acquisitionDate || '-'}</strong></span>
@@ -8885,8 +8903,11 @@ class AppController {
     // 現在選択されている種別の下書きを生成 (下書き保存されたものがあればそれを使用)
     const draftKey = `draft_${currentTypeId}`;
     let draft = action.reportDrafts?.[draftKey];
-    if (!draft || !draft.subject) {
+    if (!draft || !draft.subject || (draft.body && draft.body.includes('undefined:')) || (draft.subject && draft.subject.includes('求人名未設定'))) {
       draft = this.generateReportEmailDraft(currentTypeId, action, job, metrics);
+      if (action.reportDrafts && action.reportDrafts[draftKey]) {
+        action.reportDrafts[draftKey] = draft;
+      }
     }
 
     // すでに報告済みかどうか
@@ -9052,8 +9073,14 @@ class AppController {
     const salesName = usersMap.get(action.salesStaffId) || '営業担当者';
     const consultantName = usersMap.get(action.consultantStaffId) || '担当コンサル';
     const companyName = job.companyName || '企業名未設定';
-    const jobTitle = job.title || '求人名未設定';
+    const jobTitle = job.jobTitle || job.title || '求人名未設定';
     const actualMtg = action.actualMtgDate;
+
+    // 媒体表示名取得ヘルパー (mediaName, name, StorageServiceマスタの順で安全に解決)
+    const getMediaDisplayName = (m) => {
+      if (!m) return '未設定媒体';
+      return m.mediaName || m.name || StorageService.getMediaNameById(m.mediaId) || m.mediaId || '未設定媒体';
+    };
 
     // 1. 初回MTG実施報告 (要件10)
     if (typeId === 'report_mtg') {
@@ -9119,9 +9146,9 @@ ${actionsText}
 
       const subject = `【1週間後スカウト状況報告】${companyName}／${jobTitle}`;
 
-      const mediaNames = (period1w.usedMediaList || []).map(m => m.mediaName).join('、') || '選定媒体';
+      const mediaNames = (period1w.usedMediaList || []).map(m => getMediaDisplayName(m)).join('、') || '選定媒体';
       const mediaBreakdownText = (period1w.usedMediaList || []).length > 0 ?
-        (period1w.usedMediaList || []).map(m => `・${m.mediaName}：送信${m.sentCount}通／総返信${m.totalReplyCount}件／有効返信${m.effectiveReplyCount}件`).join('\n') :
+        (period1w.usedMediaList || []).map(m => `・${getMediaDisplayName(m)}：送信${m.sentCount}通／総返信${m.totalReplyCount}件／有効返信${m.effectiveReplyCount}件`).join('\n') :
         '・（期間中の送信実績なし）';
 
       const d = action.firstMeetingDetails || {};
@@ -9199,7 +9226,7 @@ ${mediaBreakdownText}
       const subject = `【2週間後スカウト状況報告】${companyName}／${jobTitle}`;
 
       const mediaBreakdownText = (period2w.usedMediaList || []).length > 0 ?
-        (period2w.usedMediaList || []).map(m => `・${m.mediaName}：送信${m.sentCount}通／総返信${m.totalReplyCount}件／有効返信${m.effectiveReplyCount}件`).join('\n') :
+        (period2w.usedMediaList || []).map(m => `・${getMediaDisplayName(m)}：送信${m.sentCount}通／総返信${m.totalReplyCount}件／有効返信${m.effectiveReplyCount}件`).join('\n') :
         '・（2週目送信なし）';
 
       const d = action.firstMeetingDetails || {};
@@ -9272,9 +9299,9 @@ ${mediaBreakdownText}
     const subject = `【初動報告】${companyName}／${jobTitle}（2営業日後）`;
     const expSent = Number(action.design?.expectedSentCount || 100);
     const expReply = Number(action.design?.targetReplyCount || 2);
-    const mediaBreakdown = totalMetrics.usedMediaList || [];
+    const mediaBreakdown = totalMetrics?.usedMediaList || [];
     const mediaText = mediaBreakdown.length > 0 ?
-      mediaBreakdown.map(m => `・${m.mediaName}: 送信${m.sentCount}通 / 総返信${m.totalReplyCount}件 / 有効返信${m.effectiveReplyCount}件`).join('\n') :
+      mediaBreakdown.map(m => `・${getMediaDisplayName(m)}: 送信${m.sentCount}通 / 総返信${m.totalReplyCount}件 / 有効返信${m.effectiveReplyCount}件`).join('\n') :
       '・（送信実績なし）';
 
     const body = `${salesName}さん
@@ -9283,7 +9310,7 @@ ${mediaBreakdownText}
 下記新規獲得求人につきまして、獲得後2営業日の初動スカウト結果をご報告いたします。
 
 ■対象求人
-${companyName}／${jobTitle}（ランク: ${job.rank || '-'}）
+${companyName}／${jobTitle}（ランク: ${job.priorityRank || job.rank || '-'}）
 
 ■初動集計期間
 ${action.acquisitionDate || '-'} ～ ${action.deadlineDate || today}
@@ -9318,6 +9345,9 @@ ${(action.nextActions || []).length > 0 ? (action.nextActions || []).map(a => `�
   // 初動詳細画面 イベントバインド (8タブ & アクション & 報告メール)
   // =========================================================================
   bindInitialActionDetailEvents(container, action, canEdit) {
+    const job = StorageService.getJobById(action.jobId) || { companyName: '（求人名不明）', jobTitle: `求人ID: ${action.jobId}`, title: `求人ID: ${action.jobId}`, rank: 'C', priorityRank: 'C' };
+    const metrics = this.calculateInitialActionMetrics(action);
+
     // 1. 一覧へ戻るボタン
     const btnBack = container.querySelector('#btn-back-to-initial-list');
     if (btnBack) {
@@ -9611,6 +9641,10 @@ ${(action.nextActions || []).length > 0 ? (action.nextActions || []).map(a => `�
         const bodyInput = container.querySelector('#email-draft-body');
         if (subjInput) subjInput.value = draft.subject;
         if (bodyInput) bodyInput.value = draft.body;
+        if (!action.reportDrafts) action.reportDrafts = {};
+        action.reportDrafts[`draft_${typeId}`] = draft;
+        StorageService.saveInitialAction(action, this.currentStaff?.staffId || '');
+        alert('最新の実績データでメール下書きを再生成しました。');
       });
     }
 
