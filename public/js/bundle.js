@@ -339,9 +339,11 @@ class StorageService {
     }
     if (!localStorage.getItem(KEYS.USERS)) {
       const defaultUsers = [
-        { staffId: 'STF-001', name: '尾﨑優理', status: 'active', adminRole: 'admin', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { staffId: 'STF-002', name: '山田太郎', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { staffId: 'STF-003', name: '佐藤花子', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        { staffId: 'STF-001', name: '尾﨑優理', status: 'active', adminRole: 'admin', createdAt: '2026-08-02T00:09:36.000Z', updatedAt: '2026-08-02T00:09:36.000Z' },
+        { staffId: 'STF-002', name: '若山恵美', status: 'active', adminRole: 'member', createdAt: '2026-08-02T00:09:36.000Z', updatedAt: '2026-08-02T00:12:45.000Z' },
+        { staffId: 'STF-003', name: '辻永康成', status: 'active', adminRole: 'member', createdAt: '2026-08-02T00:09:36.000Z', updatedAt: '2026-08-02T00:13:16.000Z' },
+        { staffId: 'STF-1785597209480-54', name: '玉木一光', status: 'active', adminRole: 'member', createdAt: '2026-08-02T00:13:29.000Z', updatedAt: '2026-08-02T00:13:29.000Z' },
+        { staffId: 'STF-1785597210882-631', name: '北原英', status: 'active', adminRole: 'member', createdAt: '2026-08-02T00:13:30.000Z', updatedAt: '2026-08-02T00:13:40.000Z' }
       ];
       localStorage.setItem(KEYS.USERS, JSON.stringify(defaultUsers));
     }
@@ -1160,11 +1162,13 @@ class StorageService {
     let list = this.get(KEYS.USERS);
     if (!Array.isArray(list) || list.length === 0) {
       const defaultUsers = [
-        { staffId: 'STF-001', name: '尾﨑優理', status: 'active', adminRole: 'admin', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { staffId: 'STF-002', name: '山田太郎', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { staffId: 'STF-003', name: '佐藤花子', status: 'active', adminRole: 'member', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        { staffId: 'STF-001', name: '尾﨑優理', status: 'active', adminRole: 'admin', createdAt: '2026-08-02T00:09:36.000Z', updatedAt: '2026-08-02T00:09:36.000Z' },
+        { staffId: 'STF-002', name: '若山恵美', status: 'active', adminRole: 'member', createdAt: '2026-08-02T00:09:36.000Z', updatedAt: '2026-08-02T00:12:45.000Z' },
+        { staffId: 'STF-003', name: '辻永康成', status: 'active', adminRole: 'member', createdAt: '2026-08-02T00:09:36.000Z', updatedAt: '2026-08-02T00:13:16.000Z' },
+        { staffId: 'STF-1785597209480-54', name: '玉木一光', status: 'active', adminRole: 'member', createdAt: '2026-08-02T00:13:29.000Z', updatedAt: '2026-08-02T00:13:29.000Z' },
+        { staffId: 'STF-1785597210882-631', name: '北原英', status: 'active', adminRole: 'member', createdAt: '2026-08-02T00:13:30.000Z', updatedAt: '2026-08-02T00:13:40.000Z' }
       ];
-      this.set(KEYS.USERS, defaultUsers);
+      localStorage.setItem(KEYS.USERS, JSON.stringify(defaultUsers));
       list = defaultUsers;
     }
     return list.map(u => ({
@@ -13473,9 +13477,6 @@ ${(action.nextActions || []).length > 0 ? (action.nextActions || []).map(a => `�
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  window.appController = new AppController();
+  window.app = new AppController();
+  window.appController = window.app;
 });
-
-
-
-document.addEventListener('DOMContentLoaded', () => { window.app = new AppController(); });
