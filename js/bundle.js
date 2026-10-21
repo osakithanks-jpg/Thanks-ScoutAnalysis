@@ -363,7 +363,29 @@ class StorageService {
   }
 
   /**
-   * 1. 起動時にCloud Firestoreから最新データを最優先読み込み (Single Source of Truth)
+   * ローカルの既存データをリモートの空配列[]や不正値による破壊的初期化から保護する安全判定
+   */
+  static shouldProtectLocalData(key, remoteJsonStr, localJsonStr) {
+    if (!localJsonStr) return false;
+    const criticalKeys = [
+      KEYS.JOBS, KEYS.COMPANIES, KEYS.RESULTS, KEYS.USERS,
+      KEYS.MEDIA, KEYS.MESSAGES, KEYS.INITIAL_ACTIONS
+    ];
+    if (!criticalKeys.includes(key)) return false;
+    try {
+      const localParsed = JSON.parse(localJsonStr);
+      const remoteParsed = JSON.parse(remoteJsonStr);
+      if (Array.isArray(localParsed) && localParsed.length > 0) {
+        if (!Array.isArray(remoteParsed) || remoteParsed.length === 0) {
+          return true; // ローカル既存データを保護
+        }
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  /**
+   * 1. 起動時にCloud Firestoreから最新データを最優先読み込み (Single Source of Truth, 読み込み専用・書き込み副作用排除)
    */
   static async loadFromFirestoreFirst() {
     const projectId = (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.projectId) || 'project-5bedb';
@@ -392,14 +414,18 @@ class StorageService {
           const key = doc.id;
           const docData = doc.data();
           if (docData && typeof docData.jsonStr === 'string') {
-            localStorage.setItem(key, docData.jsonStr);
+            const currentLocal = localStorage.getItem(key);
+            if (this.shouldProtectLocalData(key, docData.jsonStr, currentLocal)) {
+              console.warn(`[Safety Guard] Protected local non-empty data for key "${key}" from remote empty overwrite.`);
+            } else {
+              localStorage.setItem(key, docData.jsonStr);
+            }
           }
         });
       } else {
-        // クラウドが完全な0件の初期状態のみ、初期マスタを作成してFirestoreへ保存
-        console.log(`[Firestore Init] Collection ${collectionName} is empty. Seeding initial default master into Firestore...`);
+        // クラウドが0件の場合はローカルフォールバックのみ適用し、絶対にFirestoreへ空同期しない (破壊的初期化の防止)
+        console.warn(`[Firestore Warning] Collection ${collectionName} returned 0 documents. Keeping local storage.`);
         this.initStorageFallbackOnly();
-        this.syncAllLocalStorageToFirestore();
       }
       return true;
     } catch (err) {
@@ -416,10 +442,22 @@ class StorageService {
     Object.values(KEYS).forEach(key => {
       const val = localStorage.getItem(key);
       if (val !== null) {
+        // 空配列によるFirestoreマスターデータの上書き防止ガード
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed) && parsed.length === 0) {
+            const criticalKeys = [KEYS.JOBS, KEYS.COMPANIES, KEYS.RESULTS, KEYS.USERS, KEYS.INITIAL_ACTIONS];
+            if (criticalKeys.includes(key)) {
+              console.log(`[syncAllLocalStorageToFirestore] Skipping empty array for critical key: ${key}`);
+              return;
+            }
+          }
+        } catch (e) {}
+
         window.firestoreDb.collection(collectionName).doc(key).set({
           jsonStr: val,
           updatedAt: new Date().toISOString(),
-          updatedByStaffId: this.getCurrentStaffId() || 'SYSTEM_INIT'
+          updatedByStaffId: this.getCurrentStaffId() || 'SYSTEM'
         }).catch(err => {
           console.error(`[Firestore Sync Fail] Key: ${key} | Code: ${err.code} | Message: ${err.message}`, err);
         });
@@ -452,16 +490,25 @@ class StorageService {
               if (docData && typeof docData.jsonStr === 'string') {
                 const currentLocal = localStorage.getItem(key);
                 if (currentLocal !== docData.jsonStr) {
-                  localStorage.setItem(key, docData.jsonStr);
-                  hasRemoteChanges = true;
-                  console.log(`[Firestore Remote Update] Key: ${key} synced from Cloud Firestore.`);
+                  if (this.shouldProtectLocalData(key, docData.jsonStr, currentLocal)) {
+                    console.warn(`[Safety Guard onSnapshot] Blocked overwriting non-empty local ${key} with remote empty data.`);
+                  } else {
+                    localStorage.setItem(key, docData.jsonStr);
+                    hasRemoteChanges = true;
+                    console.log(`[Firestore Remote Update] Key: ${key} synced from Cloud Firestore.`);
+                  }
                 }
               }
             } else if (change.type === 'removed') {
               const key = change.doc.id;
-              localStorage.removeItem(key);
-              hasRemoteChanges = true;
-              console.log(`[Firestore Remote Remove] Key: ${key} removed from Cloud Firestore.`);
+              const currentLocal = localStorage.getItem(key);
+              if (this.shouldProtectLocalData(key, '[]', currentLocal)) {
+                console.warn(`[Safety Guard onSnapshot] Blocked removing non-empty local ${key}.`);
+              } else {
+                localStorage.removeItem(key);
+                hasRemoteChanges = true;
+                console.log(`[Firestore Remote Remove] Key: ${key} removed from Cloud Firestore.`);
+              }
             }
           });
 
@@ -9082,6 +9129,18 @@ class AppController {
       return m.mediaName || m.name || StorageService.getMediaNameById(m.mediaId) || m.mediaId || '未設定媒体';
     };
 
+    // 初動設計で選定された媒体リストの抽出
+    const plannedMediaList = (action.design?.mediaPlans || []).map(p => {
+      const name = p.mediaName || StorageService.getMediaNameById(p.mediaId) || p.mediaId || '';
+      return {
+        mediaId: p.mediaId,
+        mediaName: name,
+        targetSentCount: Number(p.targetSentCount) || 50
+      };
+    }).filter(p => Boolean(p.mediaName));
+
+    const plannedMediaNames = plannedMediaList.map(p => p.mediaName);
+
     // 1. 初回MTG実施報告 (要件10)
     if (typeId === 'report_mtg') {
       const d = action.firstMeetingDetails || {};
@@ -9097,6 +9156,8 @@ class AppController {
       } else {
         actionsText = `・対応内容: 当初設計方針に沿ってスカウト継続\n・担当者: ${consultantName}\n・期限: ${action.report1WeekDeadline || '-'}`;
       }
+
+      const mediaDiffText = d.mediaDiff || (plannedMediaNames.length > 0 ? plannedMediaNames.join('、') : '変更なし');
 
       const body = `${salesName}さん
 
@@ -9123,7 +9184,7 @@ ${companyName}／${jobTitle}
 ・ターゲット：${d.targetDiff || '変更なし'}
 ・スカウト文面：${d.scoutDiff || '変更なし'}
 ・検索条件：${d.searchDiff || '変更なし'}
-・実施媒体：${d.mediaDiff || '変更なし'}
+・実施媒体：${mediaDiffText}
 
 ■MTG後のアクション
 ${actionsText}
@@ -9146,10 +9207,13 @@ ${actionsText}
 
       const subject = `【1週間後スカウト状況報告】${companyName}／${jobTitle}`;
 
-      const mediaNames = (period1w.usedMediaList || []).map(m => getMediaDisplayName(m)).join('、') || '選定媒体';
+      const usedNames1w = (period1w.usedMediaList || []).map(m => getMediaDisplayName(m));
+      const mediaNames = usedNames1w.length > 0 ? usedNames1w.join('、') : (plannedMediaNames.length > 0 ? plannedMediaNames.join('、') : '選定媒体');
       const mediaBreakdownText = (period1w.usedMediaList || []).length > 0 ?
         (period1w.usedMediaList || []).map(m => `・${getMediaDisplayName(m)}：送信${m.sentCount}通／総返信${m.totalReplyCount}件／有効返信${m.effectiveReplyCount}件`).join('\n') :
-        '・（期間中の送信実績なし）';
+        (plannedMediaList.length > 0 ?
+          plannedMediaList.map(p => `・${p.mediaName}：送信実績なし（目標: ${p.targetSentCount}通）`).join('\n') :
+          '・（期間中の送信実績なし）');
 
       const d = action.firstMeetingDetails || {};
       const body = `${salesName}さん
@@ -9187,7 +9251,7 @@ ${mediaBreakdownText}
 ・変更したターゲット：${d.targetDiff || '変更なし'}
 ・変更した文面：${d.scoutDiff || '変更なし'}
 ・変更した検索条件：${d.searchDiff || '変更なし'}
-・追加した媒体：${d.mediaDiff || 'なし'}
+・追加した媒体：${d.mediaDiff || (plannedMediaNames.length > 0 ? plannedMediaNames.join('、') : 'なし')}
 
 ■反応と見立て
 ・返信者の傾向：${r1w.replierCommonalities || '（確認中）'}
@@ -9225,9 +9289,14 @@ ${mediaBreakdownText}
 
       const subject = `【2週間後スカウト状況報告】${companyName}／${jobTitle}`;
 
+      const usedNames2w = (period2w.usedMediaList || []).map(m => getMediaDisplayName(m));
+      const mediaNames2w = usedNames2w.length > 0 ? usedNames2w.join('、') : (plannedMediaNames.length > 0 ? plannedMediaNames.join('、') : '選定媒体');
+
       const mediaBreakdownText = (period2w.usedMediaList || []).length > 0 ?
         (period2w.usedMediaList || []).map(m => `・${getMediaDisplayName(m)}：送信${m.sentCount}通／総返信${m.totalReplyCount}件／有効返信${m.effectiveReplyCount}件`).join('\n') :
-        '・（2週目送信なし）';
+        (plannedMediaList.length > 0 ?
+          plannedMediaList.map(p => `・${p.mediaName}：2週目送信なし（目標: ${p.targetSentCount}通）`).join('\n') :
+          '・（2週目送信なし）');
 
       const d = action.firstMeetingDetails || {};
       const body = `${salesName}さん
@@ -9247,6 +9316,7 @@ ${start2w}～${baseDate}
 ・有効返信数：${period2w.effectiveReplyCount}件
 ・総返信率：${period2w.totalReplyRate}%
 ・有効返信率：${period2w.effectiveReplyRate}%
+・実施媒体：${mediaNames2w}
 
 ■MTG後2週間の累計
 ・送信数：${periodMtgTotal.sentCount}通
@@ -9273,7 +9343,7 @@ ${mediaBreakdownText}
 ・ターゲット：${d.targetDiff || '変更なし'}
 ・文面：${d.scoutDiff || '変更なし'}
 ・検索条件：${d.searchDiff || '変更なし'}
-・実施媒体：${d.mediaDiff || '変更なし'}
+・実施媒体：${d.mediaDiff || (plannedMediaNames.length > 0 ? plannedMediaNames.join('、') : '変更なし')}
 
 ■2週間の検証結果
 ・有効だったターゲット：${r2w.effectiveTarget || '（未入力）'}
@@ -9299,10 +9369,17 @@ ${mediaBreakdownText}
     const subject = `【初動報告】${companyName}／${jobTitle}（2営業日後）`;
     const expSent = Number(action.design?.expectedSentCount || 100);
     const expReply = Number(action.design?.targetReplyCount || 2);
+
+    const usedNames2d = (totalMetrics?.usedMediaList || []).map(m => getMediaDisplayName(m));
+    const allMediaNames = Array.from(new Set([...plannedMediaNames, ...usedNames2d]));
+    const mediaNamesDisplay = allMediaNames.length > 0 ? allMediaNames.join('、') : '選定媒体';
+
     const mediaBreakdown = totalMetrics?.usedMediaList || [];
     const mediaText = mediaBreakdown.length > 0 ?
       mediaBreakdown.map(m => `・${getMediaDisplayName(m)}: 送信${m.sentCount}通 / 総返信${m.totalReplyCount}件 / 有効返信${m.effectiveReplyCount}件`).join('\n') :
-      '・（送信実績なし）';
+      (plannedMediaList.length > 0 ?
+        plannedMediaList.map(p => `・${p.mediaName}: 送信0通 / 総返信0件 / 有効返信0件 (選定・目標: ${p.targetSentCount}通)`).join('\n') :
+        '・（送信実績なし）');
 
     const body = `${salesName}さん
 
@@ -9316,6 +9393,7 @@ ${companyName}／${jobTitle}（ランク: ${job.priorityRank || job.rank || '-'}
 ${action.acquisitionDate || '-'} ～ ${action.deadlineDate || today}
 
 ■送信実績サマリ
+・選定・実施媒体: ${mediaNamesDisplay}
 ・累計送信数: ${totalMetrics.sentCount}通（目標想定: ${expSent}通）
 ・総返信数: ${totalMetrics.totalReplyCount}件（目標想定: ${expReply}件）
 ・有効返信数: ${totalMetrics.effectiveReplyCount}件
