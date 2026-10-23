@@ -371,7 +371,7 @@ class StorageService {
     if (!localJsonStr) return false;
     const criticalKeys = [
       KEYS.JOBS, KEYS.COMPANIES, KEYS.RESULTS, KEYS.USERS,
-      KEYS.MEDIA, KEYS.MESSAGES, KEYS.INITIAL_ACTIONS
+      KEYS.MEDIA, KEYS.MESSAGES, KEYS.INITIAL_ACTIONS, KEYS.USER_JOBS
     ];
     if (!criticalKeys.includes(key)) return false;
     try {
@@ -448,7 +448,7 @@ class StorageService {
         try {
           const parsed = JSON.parse(val);
           if (Array.isArray(parsed) && parsed.length === 0) {
-            const criticalKeys = [KEYS.JOBS, KEYS.COMPANIES, KEYS.RESULTS, KEYS.USERS, KEYS.INITIAL_ACTIONS];
+            const criticalKeys = [KEYS.JOBS, KEYS.COMPANIES, KEYS.RESULTS, KEYS.USERS, KEYS.INITIAL_ACTIONS, KEYS.USER_JOBS];
             if (criticalKeys.includes(key)) {
               console.log(`[syncAllLocalStorageToFirestore] Skipping empty array for critical key: ${key}`);
               return;
@@ -2001,7 +2001,29 @@ class StorageService {
 
   // --- 担当求人 (User-Jobs) ---
   static getUserJobs(staffId = '') {
-    const list = this.get(KEYS.USER_JOBS);
+    let list = this.get(KEYS.USER_JOBS);
+    if (!Array.isArray(list)) list = [];
+
+    // 自動補完ガード: 対象スタッフの担当求人が0件の場合、全アクティブ求人を自動割当
+    if (staffId && list.filter(uj => uj.staffId === staffId).length === 0) {
+      const activeJobs = this.getActiveJobs();
+      if (activeJobs.length > 0) {
+        const now = new Date().toISOString();
+        const autoUserJobs = activeJobs.map((j, idx) => ({
+          staffJobId: `${staffId}_${j.jobId}`,
+          staffId,
+          jobId: j.jobId,
+          hidden: false,
+          pinned: false,
+          displayOrder: idx + 1,
+          createdAt: now,
+          updatedAt: now
+        }));
+        list = [...list, ...autoUserJobs];
+        this.set(KEYS.USER_JOBS, list);
+      }
+    }
+
     return staffId ? list.filter(uj => uj.staffId === staffId) : list;
   }
 
