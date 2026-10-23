@@ -371,7 +371,7 @@ class StorageService {
     if (!localJsonStr) return false;
     const criticalKeys = [
       KEYS.JOBS, KEYS.COMPANIES, KEYS.RESULTS, KEYS.USERS,
-      KEYS.MEDIA, KEYS.MESSAGES, KEYS.INITIAL_ACTIONS, KEYS.USER_JOBS
+      KEYS.MEDIA, KEYS.MESSAGES, KEYS.USER_JOBS
     ];
     if (!criticalKeys.includes(key)) return false;
     try {
@@ -448,7 +448,7 @@ class StorageService {
         try {
           const parsed = JSON.parse(val);
           if (Array.isArray(parsed) && parsed.length === 0) {
-            const criticalKeys = [KEYS.JOBS, KEYS.COMPANIES, KEYS.RESULTS, KEYS.USERS, KEYS.INITIAL_ACTIONS, KEYS.USER_JOBS];
+            const criticalKeys = [KEYS.JOBS, KEYS.COMPANIES, KEYS.RESULTS, KEYS.USERS, KEYS.USER_JOBS];
             if (criticalKeys.includes(key)) {
               console.log(`[syncAllLocalStorageToFirestore] Skipping empty array for critical key: ${key}`);
               return;
